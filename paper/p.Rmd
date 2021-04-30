@@ -1,0 +1,102 @@
+---
+title             : "The title"
+shorttitle        : "Title"
+
+author: 
+  - name          : "First Author"
+    affiliation   : "1"
+    corresponding : yes    # Define only one corresponding author
+    address       : "Postal address"
+    email         : "my@email.com"
+  - name          : "Ernst-August Doelle"
+    affiliation   : "1,2"
+
+affiliation:
+  - id            : "1"
+    institution   : "Wilhelm-Wundt-University"
+  - id            : "2"
+    institution   : "Konstanz Business School"
+
+authornote: |
+  Add complete departmental affiliations for each author here. Each new line herein must be indented, like this line.
+
+  Enter author note here.
+
+abstract: |
+  Insert abstract here.
+  
+keywords          : "keywords"
+wordcount         : "X"
+
+note              : |
+  Draft version 1, April, 2021. This paper has not been peer-reviewed.
+
+bibliography      : ["lab.bib", "r-references.bib"]
+
+figsintext        : yes
+figurelist        : no
+tablelist         : no
+footnotelist      : no
+lineno            : yes
+mask              : no
+
+header-includes:
+  - \usepackage{mathrsfs}
+  - \usepackage[makeroom]{cancel}
+  - \usepackage{pcl}
+  - \usepackage{setspace}\doublespacing
+  - \usepackage{marginnote}
+  - \newcommand{\readme}[1]{\emph{\marginnote{Julia} (#1)}}
+  - \usepackage{pifont}
+  - \usepackage{hyperref}
+  - \usepackage{colortbl}
+  - \hypersetup{colorlinks=true,urlcolor=blue,citecolor=black,linkcolor=black}
+
+class             : "doc"
+output            : papaja::apa6_pdf
+csl               : apa6.csl
+---
+
+```{r setup, include = FALSE}
+library("papaja")
+```
+
+```{r analysis-preferences}
+# Seed for random number generation
+set.seed(42)
+knitr::opts_chunk$set(cache.extra = knitr::rand_seed)
+```
+
+
+
+# Methods
+We report how we determined our sample size, all data exclusions (if any), all manipulations, and all measures in the study. <!-- 21-word solution (Simmons, Nelson & Simonsohn, 2012; retrieved from http://ssrn.com/abstract=2160588) -->
+
+## Participants
+
+## Material
+
+## Procedure
+
+## Data analysis
+We used `r cite_r("r-references.bib")` for all our analyses.
+
+
+# Results
+
+# Discussion
+
+
+\newpage
+
+# References
+```{r create_r-references}
+r_refs(file = "r-references.bib")
+```
+
+\begingroup
+\setlength{\parindent}{-0.5in}
+\setlength{\leftskip}{0.5in}
+
+<div id = "refs"></div>
+\endgroup

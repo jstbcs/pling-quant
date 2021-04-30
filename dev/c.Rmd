@@ -1,0 +1,710 @@
+---
+title: "Individual Differences of Quantifier Interpretation"
+author: "Julia Haaf"
+date: "6/3/2019"
+bibliography      : "lab.bib"
+output: 
+  html_document:
+    theme: cerulean
+    highlight: tango
+    code_folding: hide
+---
+
+```{r, message=F}
+library("dplyr")
+library("MCMCpack")
+library("LaplacesDemon")
+library("rstan")
+library("plotrix")
+library(RColorBrewer)
+library(corrplot)
+```
+
+**To Do:**
+
+- Extend to other quantifiers (few and fewer than half).
+- Look at symmetry models for fewer than half vs. more than half, and few vs. many.
+- Repeat analysis for study 2 data.
+
+## The Task (How I understand it)
+
+In this task, participants have to evaluate whether a certain quantifier logically describes a scenario. Scenarios are percentages of, for example, apples that are green. Say, 20% of apples are green, is the statement that "most of the apples are green" true or false? Percentages are drawn from a uniform ensuring that as many trials have more than 50% as have less than 50%. The quantifiers of interest are *Few*, *Fewer than half*, *Many*, *Most* and *More than half*. The idea is that *More than half* is defined by more than 50% for everyone while *Most* may be more subjective, and it may be more than *More than half* for everyone. Additionally, we may inspect the relationship between *Many* and *More than half*, and also symmetries between mirrored quantifiers.
+
+## Modeling Approach {.tabset .tabset-fade}
+
+I think we could use a probit regression with a participant-specific quantifier effect and a participant-specific effect of percentage used. This way we could at least assess whether *Most* is more than *More than half* by defining the quantifier effect as a contrast between the two. It could even be tested in this framework whether *More than half* is 50% for everyone.
+
+### Model
+
+**Disclaimer:** I have tweaked the model yesterday to accommodate the added quantifier *Many* and the model comparison I planned. Therefore, this section probably needs to be updated slightly.
+
+Let $i$ indicate participants, $i = 1, \ldots, I$, $j$ indicate the quantifier, $j = 1, \ldots, 5$, and $k$ indicate the trial for each quantifier, $k = 1, \ldots, K_{ij}$.^[Originally, $K_{ij} = 50$. But this value may be reduced after cleaning on the trial level.] Then $Y_{ijk}$ is the $i$th participant's response to the $j$th quantifier in the $k$th trial, and $Y_{ijk} = 1$ if participants indicate *true*, and $Y_{ijk} = 0$ if participant indicate *false*. Then, we may model $Y_{ijk}$ as a Bernoulli, using the probit link function on the probabilities:
+
+\begin{align*}
+Y_{ijk} &\sim \mbox{Bernoulli}(\pi_{ijk}),\\
+\mu_{ijk} &= \Phi^{-1}(\pi_{ijk}),\\
+\end{align*}
+
+where the second line maps the probability space of $\pi$ onto the real space of $\mu$. We may now place a linear model on $\mu_{ijk}$:
+
+\[\mu_{ijk} = \beta_{i0} + l_{ijk}\beta_{i1} + h_{ijk}\beta_{i2} + z_{i1} \beta_{i3} +  + z_{i2} \beta_{i4} +  + z_{i3} \beta_{i5} +  + z_{i4} \beta_{i6} + z_{i5} \beta_{i7},\]
+
+where $l_{ijk}$, $h_{ijk}$ and $z_{ij}$ are predictors: $l_{ijk}$ is zero for percentages above 50%, and indicates the centered percentage otherwise; $xh{ijk}$ is zero for percentages below 50%, and indicates the centered percentage otherwise, and $z_{ij}$ is an indicator function denoting the respective quantifier (e.g., $z_{i1} = 1$ for the quantifier *Fewer*, and $z_{i1} = 0$ otherwise). Parameters $\beta_{i0}$ are random intercepts, $\beta_{i1}$ are random percentage effects for percentages below 50%, $\beta_{i12}$ are random percentage effects for percentages above 50%, and $\beta_{i3}$ to $\beta_{i7}$ are random quantifier effects. For now, I will place the following priors:
+
+\begin{align*}
+\beta_{i0} &\sim \mbox{Normal}(0, \sigma_0^2),\\
+\beta_{i1} &\sim \mbox{Normal}(\delta_1, \sigma_1^2),\\
+\beta_{i2} &\sim \mbox{Normal}(\delta_2, \sigma_2^2),\\
+\beta_{i3} &\sim \mbox{Normal}(\delta_3, \sigma_3^2).\\
+\beta_{i4} &\sim \mbox{Normal}(\delta_4, \sigma_4^2).\\
+\beta_{i5} &\sim \mbox{Normal}(\delta_5, \sigma_5^2).\\
+\beta_{i6} &\sim \mbox{Normal}(\delta_6, \sigma_6^2).\\
+\beta_{i7} &\sim \mbox{Normal}(\delta_7, \sigma_7^2).\\
+\end{align*}
+
+**Needed:** Proper description of prior settings.
+
+### Simulating mistakes
+
+## Study 1 {.tabset .tabset-fade}
+
+### Data
+
+```{r}
+exclude <- c(0, 1, 5, 18, 32, 39, 49, 52, 53, 58, 62, 81, 82, 83, 85, 86, 87, 27, 76)
+ # 0,1,5,39,18,32,49,52,53,58,62,81,82,83,85,86,87,76
+exclude2 <- c(27, 76)
+
+dat <- read.csv("data/exp1-replication-trials.csv")
+head(dat)
+nrow(dat)
+
+# Exclusion based on Sonia's code
+## Participant-level
+dat <- subset(dat, !(workerid %in% exclude))
+nrow(dat)
+
+## Trial-level
+dat <- subset(dat, read_and_decide_time > 300)
+dat <- subset(dat, read_and_decide_time < 2500)
+nrow(dat)
+
+table(dat$quant, dat$workerid)[, 1]
+hist(dat$percent)
+table(dat$percent>50)
+
+table(dat$response, dat$quant)
+dat$qq <- as.numeric(factor(dat$quant))
+
+dat <- subset(dat, qq %in% 2:6)
+prop <- tapply(as.numeric(factor(dat$response)) - 1, list(dat$percent, dat$qq), mean, na.rm = T)
+```
+
+```{r fig-quant}
+qcols <- brewer.pal(5, "Dark2")
+
+matplot(as.numeric(rownames(prop)), prop
+        , pch = 19, col = qcols
+        , xlab = "Percent", ylab = "Proportion 'true' responses"
+        , frame.plot = F)
+abline(v = 50, lwd = 1.5, col = "darkgrey")
+abline(h = .50, lwd = 1.5, col = "darkgrey")
+legend(75, .7, legend = c("Few", "Fewer than half", "Many", "More than half", "Most")
+       , fill = qcols, bg = "white", box.col = "white")
+```
+
+I now recode the responses to correspond to the expected direction of response. I will therefore flip TRUE and FALSE responses for the quantifiers *few* and *fewer than half*.
+
+```{r}
+dat$resp <- case_when(
+  dat$qq %in% 4:6 ~ as.numeric(factor(dat$response)) - 1,
+  dat$qq %in% 2:3 ~ -as.numeric(factor(dat$response)) + 2
+)
+```
+
+```{r fig-quant-2}
+prop <- tapply(dat$resp, list(dat$percent, dat$qq), mean, na.rm = T)
+qcols <- brewer.pal(5, "Dark2")
+
+matplot(as.numeric(rownames(prop)), prop
+        , pch = 19, col = qcols
+        , xlab = "Percent", ylab = "Proportion 'true' responses"
+        , frame.plot = F)
+abline(v = 50, lwd = 1.5, col = "darkgrey")
+abline(h = .50, lwd = 1.5, col = "darkgrey")
+legend(75, .7, legend = c("Few", "Fewer than half", "Many", "More than half", "Most")
+       , fill = qcols, bg = "white", box.col = "white")
+```
+
+### Estimation
+
+#### Priors
+
+```{r}
+x <- seq(0, 5, .01)
+ysig <- dlnorm(x, .1, .5)
+ysig2 <- 2 * x * dinvgamma(x^2, 2, .1)
+plot(x, ysig, type = "l")
+lines(x, ysig2, col = 2)
+ydelt <- rnorm(x, 0, .1)
+
+M <- 10000
+ysig2 <- rinvgamma(M, 2, .1)
+ydelt <- rnorm(M, 0, .1)
+
+prioreff <- rnorm(M, ydelt, sqrt(ysig2))
+
+layout(matrix(1:4, ncol = 2, byrow = T))
+hist(prioreff)
+hist(ydelt)
+hist(pnorm(prioreff), xlim = c(0, 1))
+hist(pnorm(ydelt), xlim = c(0, 1))
+```
+
+#### Model
+
+```{stan output.var= 'logmod', cache= T}
+data {
+  int<lower=1> D;                     // #Dimensions of the model
+  int<lower=0> N;                     // #Observations
+  int<lower=1> I;                     // #Participants
+  int<lower=0,upper=1> y[N];          // Data 0,1
+  vector[N] cperc;                    // Centered Percentages
+  int<lower=1,upper=I> sub[N];        // participant vector
+  int<lower=0,upper=1> few[N];      // Few
+  int<lower=0,upper=1> fewer[N];      // Fewer than half
+  int<lower=0,upper=1> many[N];      // Many
+  int<lower=0,upper=1> more[N];      // More than half
+  int<lower=0,upper=1> most[N];      // Most
+  int<lower=0,upper=1> above[N];      // Above 50 percent?
+}
+
+parameters {
+  real delta[D];                      // Means of betas
+  real<lower=0> sigma2[D];             // variance of betas
+  vector[D] beta[I];                  // vectors of betas
+  real gamma[D];                      // Means of alphas
+  real<lower=0> sigma2alpha[D];       // variance of alphas
+  vector<lower=0>[D] alpha[I];                  // vectors of alphas
+}
+
+transformed parameters {
+  real<lower=0> sigma[D];
+  real<lower=0> sigmaalpha[D];
+  sigma = sqrt(sigma2);
+  sigmaalpha = sqrt(sigma2alpha);
+}
+
+model {
+  vector[N] mu;
+  delta ~ normal(0, 5);
+  sigma2 ~ inv_gamma(2, .1);
+  gamma ~ normal(0, 5);
+  sigma2alpha ~ inv_gamma(2, .1);
+  for (i in 1:I)
+    beta[i] ~ normal(delta, sigma);
+  for (i in 1:I)
+    alpha[i] ~ lognormal(gamma, sigmaalpha);
+  for (n in 1:N)
+    mu[n] = few[n] * (cperc[n] - beta[sub[n], 1]) / alpha[sub[n], 1] + fewer[n] * (cperc[n] - beta[sub[n], 2]) / alpha[sub[n], 2] + many[n] * (cperc[n] - beta[sub[n], 3]) / alpha[sub[n], 3] + more[n] * (cperc[n] - beta[sub[n], 4]) / alpha[sub[n], 4] + most[n] * (cperc[n] - beta[sub[n], 5]) / alpha[sub[n], 5];
+  y ~ bernoulli_logit(mu);
+}
+```
+
+```{r init, cache = T}
+getDat <- function(dat){
+  # dat <- subset(dat, qq %in% 4:6)
+  
+  D <- 5
+  N <- nrow(dat)
+  I <- length(unique(dat$workerid))
+  
+  y <- dat$resp
+  cperc <- (dat$percent - 50) / 100
+  sub <- as.numeric(factor(dat$workerid))
+  few <- ifelse(dat$qq == 2, 1, 0)
+  fewer <- ifelse(dat$qq == 3, 1, 0)
+  many <- ifelse(dat$qq == 4, 1, 0)
+  more <- ifelse(dat$qq == 5, 1, 0)
+  most <- ifelse(dat$qq == 6, 1, 0)
+  above <- as.numeric(cperc > 0)
+  
+  # res <- glm(y ~ cperc + few + fewer + many + more + most, family = binomial(link = "probit"), 
+  #   data = dat)
+  
+  standat <- list(D = D, N = N, I = I, y = y, cperc = cperc, sub = sub,
+                  few = few, fewer = fewer, many = many, more = more, most = most
+                  , above = above)  
+  return(standat)
+}
+
+myRunner <- function(standat, iter = 1000, warmup = 400, mod, nchains = 4, ...){
+  inits <- function(...){
+    list(delta = runif(standat$D, -.5, .5)
+         , sigma2 = runif(standat$D, 1, 1.5)
+         , beta = matrix(runif(standat$I * standat$D, -1, 1), nrow = standat$I, ncol = standat$D)
+         , gamma = runif(standat$D, .1, 1)
+         , sigma2alpha = runif(standat$D, 1, 1.5)
+         , alpha = matrix(runif(standat$I * standat$D, .1, 1), nrow = standat$I, ncol = standat$D))
+  }
+  # inits <- list(c1 = inits)
+  fit <- sampling(mod, verbose=T,
+                  data = standat, 
+                  iter = iter,
+                  warmup = warmup,
+                  chains = nchains,
+                  cores = nchains,
+                  # init = lapply(1:4, inits),
+                  pars = c("delta", "gamma", "beta", "alpha", "sigma2", "sigma2alpha")
+                  , ...)
+  return(fit)}
+
+predat <- getDat(dat)
+```
+
+```{r run-logmod, cache = T, eval = F, results = "hide"}
+rerun <- T
+logmodfit <- myRunner(predat
+                      , iter = 5000
+                      , warmup = 1000
+                      , mod = logmod
+                      , control = list(adapt_delta = .975, max_treedepth = 15)
+                      , nchains = 4)
+save(logmodfit, file = "outstudy1b.rda")
+```
+
+```{r, cache = T}
+load("outstudy1b.rda")
+```
+
+- Here is an initial check how well the chains mixed. This is a bit of a problem for the model. I may have to reparameterize to set one quantifier (more than half?) as default.
+
+```{r}
+hist(summary(logmodfit)$summary[,"Rhat"]
+     , breaks = 100
+     , main = ""
+     , xlab =  "Rhat")
+
+hist(summary(logmodfit)$summary[,"n_eff"]
+     , breaks = 100
+     , main = ""
+     , xlab =  "Number of effective samples")
+```
+
+### Results
+
+- The overall estimates of the response curves for the three quantifiers.
+
+```{r inspect-logmod, fig.asp=1.2}
+pEst <- as.matrix(logmodfit)
+dim(pEst)
+
+pMeans <- colMeans(pEst) 
+
+I <- predat$I
+pdelta1 <- pMeans[1]
+pdelta2 <- pMeans[2]
+pdelta3 <- pMeans[3]
+pdelta4 <- pMeans[4]
+pdelta5 <- pMeans[5]
+pgamma1 <- pMeans[6]
+pgamma2 <- pMeans[7]
+pgamma3 <- pMeans[8]
+pgamma4 <- pMeans[9]
+pgamma5 <- pMeans[10]
+pbeta1 <- pMeans[10 + 1:I]
+pbeta2 <- pMeans[10 + I + 1:I]
+pbeta3 <- pMeans[10 + 2 * I + 1:I]
+pbeta4 <- pMeans[10 + 3 * I + 1:I]
+pbeta5 <- pMeans[10 + 4 * I + 1:I]
+palpha1 <- pMeans[10 + 5 * I + 1:I]
+palpha2 <- pMeans[10 + 6 * I + 1:I]
+palpha3 <- pMeans[10 + 7 * I + 1:I]
+palpha4 <- pMeans[10 + 8 * I + 1:I]
+palpha5 <- pMeans[10 + 9 * I + 1:I]
+
+cperc <- (1:100 - 50)/100
+curve.calc <- function(x, p = cperc){
+  a <- (p - x[1])/x[2]
+  exp(a)/(exp(a) + 1)
+}  
+
+pps1 <- curve.calc(c(pdelta1, exp(pgamma1)))
+pps2 <- curve.calc(c(pdelta2, exp(pgamma2)))
+pps3 <- curve.calc(c(pdelta3, exp(pgamma3)))
+pps4 <- curve.calc(c(pdelta4, exp(pgamma4)))
+pps5 <- curve.calc(c(pdelta5, exp(pgamma5)))
+
+layout(matrix(1:6, ncol = 2, byrow = T))
+
+plot(1:100, pps1, type = "l", lwd = 2, col = qcols[1], ylim = c(0,1)
+     , ylab = "Probability 'true' response", xlab = "Percent")
+lines(1:100, pps2, lwd = 2, col = qcols[2])
+lines(1:100, pps3, lwd = 2, col = qcols[3])
+lines(1:100, pps4, lwd = 2, col = qcols[4])
+lines(1:100, pps5, lwd = 2, col = qcols[5])
+abline(h = .5, col = adjustcolor(1, .5))
+abline(v = 50, col = adjustcolor(1, .5))
+legend("bottomright", legend = c("Few", "Fewer than half", "Many", "More than half", "Most")
+       , fill = qcols, bty = "n")
+
+res1 <- apply(cbind(pbeta1, palpha1), 1, curve.calc)
+matplot(res1, type = "l", lty = 1, col = qcols[1], main =  "Few")
+res2 <- apply(cbind(pbeta2, palpha2), 1, curve.calc)
+matplot(res2, type = "l", lty = 1, col = qcols[2], main =  "Fewer than half")
+res3 <- apply(cbind(pbeta3, palpha3), 1, curve.calc)
+matplot(res3, type = "l", lty = 1, col = qcols[3], main =  "Many")
+res4 <- apply(cbind(pbeta4, palpha4), 1, curve.calc)
+matplot(res4, type = "l", lty = 1, col = qcols[4], main = "More than half")
+res5 <- apply(cbind(pbeta5, palpha5), 1, curve.calc)
+matplot(res5, type = "l", lty = 1, col = qcols[5], main =  "Most")
+
+```
+
+- Individual estimates of response curves. There is quite a bit of variability for *Many*, even more than for *Most*. Roughly speaking, the ordering is *Many*, *More than half*, *Most*. *Few* has the most shallow response curve.
+
+```{r, fig.asp=.7, fig.height=7}
+layout(matrix(c(0, 1,1, 2,2, 0, 3,3,4,4,5,5), nrow = 2, byrow = T))
+par(mgp = c(2, .7, 0), mar = c(3,3,1,1))
+
+matplot(1:100, res1, type = "l", lty = 1, main = "Few", ylim = c(0,1), col = adjustcolor(1, .1)
+        , ylab = "Probability 'true' response", xlab = "Percent", frame.plot = F)
+abline(h = .5, col = adjustcolor(1, .5))
+abline(v = 50, col = adjustcolor(1, .5))
+lines(1:100, pps1, lwd = 3, col = qcols[1])
+
+matplot(1:100, res2, type = "l", lty = 1, main = "Fewer than half", ylim = c(0,1), col = adjustcolor(1, .1)
+        , ylab = "Probability 'true' response", xlab = "Percent", frame.plot = F)
+abline(h = .5, col = adjustcolor(1, .5))
+abline(v = 50, col = adjustcolor(1, .5))
+lines(1:100, pps2, lwd = 3, col = qcols[2])
+
+matplot(1:100, res3, type = "l", lty = 1, main = "Many", ylim = c(0,1), col = adjustcolor(1, .1)
+        , ylab = "Probability 'true' response", xlab = "Percent", frame.plot = F)
+abline(h = .5, col = adjustcolor(1, .5))
+abline(v = 50, col = adjustcolor(1, .5))
+lines(1:100, pps3, lwd = 3, col = qcols[3])
+
+matplot(1:100, res4, type = "l", lty = 1, main = "More than half", ylim = c(0,1), col = adjustcolor(1, .1)
+        , ylab = "Probability 'true' response", xlab = "Percent", frame.plot = F)
+abline(h = .5, col = adjustcolor(1, .5))
+abline(v = 50, col = adjustcolor(1, .5))
+lines(1:100, pps4, lwd = 3, col = qcols[4])
+
+matplot(1:100, res5, type = "l", lty = 1, main = "Most", ylim = c(0,1), col = adjustcolor(1, .1)
+        , ylab = "Probability 'true' response", xlab = "Percent", frame.plot = F)
+abline(h = .5, col = adjustcolor(1, .5))
+abline(v = 50, col = adjustcolor(1, .5))
+lines(1:100, pps5, lwd = 3, col = qcols[5])
+```
+
+- Now for the thresholds.
+
+```{r calc-thresholds, fig.width=4, fig.asp=1}
+(M1 <- cor(cbind("few" = pbeta1, "fewer" = pbeta2, "many" = pbeta3, "more" = pbeta4, "most" = pbeta5)))
+corrplot(M1, type = "upper", title = "Difficulty/Threshold", mar = c(0,0,2,0))
+
+sds1 <- apply(cbind("few" = pbeta1, "fewer" = pbeta2, "many" = pbeta3, "more" = pbeta4, "most" = pbeta5), 2, sd)
+means1 <- apply(cbind("few" = pbeta1, "fewer" = pbeta2, "many" = pbeta3, "more" = pbeta4, "most" = pbeta5), 2, mean)
+
+(M2 <- cor(cbind("few" = palpha1, "fewer" = palpha2, "many" = palpha3, "more" = palpha4, "most" = palpha5)))
+corrplot(M2, type = "upper", title = "Discriminability/Vagueness", mar = c(0,0,2,0))
+
+sds2 <- apply(cbind("few" = palpha1, "fewer" = palpha2, "many" = palpha3, "more" = palpha4, "most" = palpha5), 2, sd)
+means2 <- apply(cbind("few" = palpha1, "fewer" = palpha2, "many" = palpha3, "more" = palpha4, "most" = palpha5), 2, mean)
+```
+
+#### Comparing "More than half" and "Most"
+
+```{r thresholds-exp1, fig.asp=1.5}
+layout(matrix(c(1,2,3,3), ncol = 2, byrow = T), heights = c(.4, .6))
+
+plot(pbeta4 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "More than half", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+plot(pbeta5 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "Most", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+
+plot(pbeta4 * 100 + 50, pbeta5 * 100 + 50
+     , pch = 19, col = adjustcolor(1, .5)
+     , ylab = "Threshold for 'most'"
+     , xlab = "Threshold for 'more than half'"
+     , xlim = c(40, 65)
+     , ylim = c(40, 65)
+     )
+abline(0, 1, lwd = 1.5, col = "firebrick")
+```
+
+```{r CrIs, eval = T}
+mbeta4 <- pEst[,10 + 3 * I + 1:I]
+mbeta5 <- pEst[,10 + 4 * I + 1:I]
+mdiff <- mbeta4
+for(i in 1:ncol(mdiff)){
+  mdiff[,i] <- apply(cbind(mbeta4[,i], mbeta5[,i]), 1, function(x) x[2] - x[1])
+}
+pCIs <- apply(mdiff, 2, quantile, probs = c(.025, .975)) 
+pThresh <- apply(mdiff, 2, mean)
+```
+
+```{r, eval = T}
+indord <- order(pThresh)
+plotCI(1:I, pThresh[indord]
+       , li = pCIs[1, indord], ui = pCIs[2, indord]
+       , pch = 21, pt.bg = "slateblue"
+       , ylab = "Most - More than half"
+       , xlab = "Participant")
+abline(h = 0)
+```
+
+**Bayes factor assessing whether *More* is more than *More than half* for everyone.**
+
+```{r, eval = T}
+## Prior probability
+M <- 100000
+s2 <- rinvgamma(M, 2, .1)
+beta4 <- rnorm(M, 0, .1)
+
+prioreff <- exp(pnorm(0, beta4, sqrt(s2), lower.tail = T, log.p = T) * I)
+priorneg <- mean(prioreff)
+
+## Posterior Probability
+targ <- mdiff
+good <- targ < 0 #evaluate their sign
+all.good <- apply(good, 1, mean) #evaluate how often all theta estimates are postitive
+postneg <- mean(all.good == 1) #Posterior probability of all theta_i being positive
+
+# priorneg
+# postneg
+
+bfmomo <- postneg/priorneg
+```
+
+#### Comparing "More than half" and "Many"
+
+```{r thresholds-exp1-b, fig.asp=1.5}
+layout(matrix(c(1,2,3,3), ncol = 2, byrow = T), heights = c(.4, .6))
+
+plot(pbeta4 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "More than half", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+plot(pbeta3 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "Many", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+
+plot(pbeta4 * 100 + 50, pbeta3 * 100 + 50
+     , pch = 19, col = adjustcolor(1, .5)
+     , ylab = "Threshold for 'many'"
+     , xlab = "Threshold for 'more than half'"
+     , xlim = c(10, 60)
+     , ylim = c(10, 60)
+     )
+abline(0, 1, lwd = 1.5, col = "firebrick")
+```
+
+```{r CrIs-b, eval = T}
+mbeta4 <- pEst[,10 + 3 * I + 1:I]
+mbeta3 <- pEst[,10 + 2 * I + 1:I]
+mdiffmany <- mbeta4
+for(i in 1:ncol(mdiff)){
+  mdiffmany[,i] <- apply(cbind(mbeta3[,i], mbeta4[,i]), 1, function(x) x[2] - x[1])
+}
+pCIs <- apply(mdiffmany, 2, quantile, probs = c(.025, .975)) 
+pThresh <- apply(mdiffmany, 2, mean)
+```
+
+```{r, eval = T}
+indord <- order(pThresh)
+plotCI(1:I, pThresh[indord]
+       , li = pCIs[1, indord], ui = pCIs[2, indord]
+       , pch = 21, pt.bg = "slateblue"
+       , ylab = "More than half - Many"
+       , xlab = "Participant")
+abline(h = 0)
+```
+
+**Bayes factor assessing whether *Many* is less than *More than half* for everyone.**
+
+```{r, eval = T}
+## Prior probability
+M <- 100000
+s2 <- rinvgamma(M, 2, .1)
+beta3 <- rnorm(M, 0, .1)
+
+prioreff <- exp(pnorm(0, beta3, sqrt(s2), lower.tail = T, log.p = T) * I)
+priorneg <- mean(prioreff)
+
+## Posterior Probability
+targ <- mdiffmany
+good <- targ > 0 #evaluate their sign
+all.good <- apply(good, 1, mean) #evaluate how often all theta estimates are postitive
+postneg <- mean(all.good == 1) #Posterior probability of all theta_i being positive
+
+# priorneg
+postneg
+
+bfmamo <- postneg/priorneg
+```
+
+
+## Additional Analyses {.tabset .tabset-fade}
+
+### Clustering 
+
+### Simulation
+
+Simple rule-based responding by setting a fixed boundary. The lines represent different levels of perceptual noise. Where this source of noise would come from in our experiment is completely unclear to me. 
+
+```{r sim-fun-rule}
+## One response
+resp <- function(p) rbinom(length(p), 1, p)
+
+## Curve simulation
+sim.curve.rule <- function(boundary, perc.noise){
+  x <- seq(0, 1, .01)
+  xmat <- matrix(rep(x, 10000), nrow = length(x))
+  res <- apply(xmat, 1, rule.resp, noise = perc.noise, boundary = boundary)
+  return(colMeans(res))
+}
+
+## Response rules
+
+## Deliberate rule-based respongind is perfect responding
+rule.resp <- function(x, boundary, noise = 0){
+  x.perc <- rnorm(length(x), x, noise)
+  p <- ifelse(x.perc > boundary, 1, 0)
+  resp(p)
+}
+
+plot(sim.curve.rule(0.5, 0), type = "l", lwd = 2, col = "darkgray", ylab = "Prop true responses", xlab = "Percent")
+lines(sim.curve.rule(0.5, 0.01), col = "slateblue", lwd = 2) # 1% perceptual noise
+lines(sim.curve.rule(0.5, 0.05), col = "firebrick", lwd = 2) # 5% perceptual noise
+```
+
+**Negation** adds error/noise to the probability of responding correctly. This can either be uniform (makes most sense to me) or a function of the distance from the boundary.
+
+```{r sim-fun-neg}
+## One response
+resp <- function(p) rbinom(length(p), 1, p)
+
+## Curve simulation
+sim.curve.neg <- function(boundary, perc.noise, neg.noise, neg){
+  x <- seq(0, 1, .01)
+  xmat <- matrix(rep(x, 10000), nrow = length(x))
+  res <- apply(xmat, 1, rule.resp.neg
+               , noise = perc.noise
+               , boundary = boundary
+               , neg.noise = neg.noise
+               , neg = neg)
+  return(colMeans(res))
+}
+
+## Response rules
+
+## Deliberate rule-based respongind is perfect responding
+rule.resp.neg <- function(x, boundary, noise = 0, neg.noise = 0.05, neg = T){
+  x.perc <- rnorm(length(x), x, noise)
+  p <- ifelse(x.perc > boundary, 1, 0)
+  if(neg == T){
+    p.noise <- rnorm(length(p), p, neg.noise)
+    p <- ifelse(p.noise>1, 1, ifelse(p.noise<0, 0, p.noise))
+  }
+  resp(p)
+}
+
+plot(sim.curve.neg(0.5, 0.01, 0, F), type = "l", lwd = 2, col = "darkgray", ylab = "Prop true responses", xlab = "Percent")
+lines(sim.curve.neg(0.5, 0.01, .1, T), col = "slateblue", lwd = 2) # 1% perceptual noise
+legend("bottomright", legend = c("More than half", "Fewer than half"), fill = c("darkgray", "slateblue"), bty = "n")
+```
+
+I had a bit of an issue finding a good way of adding noise as a function of distance from boundary. Have to play a bit more.
+
+```{r sim-fun-neg-II, cache = T}
+## One response
+resp <- function(p) rbinom(length(p), 1, p)
+
+## Curve simulation
+sim.curve.neg <- function(boundary, perc.noise, neg.noise, neg){
+  x <- seq(0, 1, .01)
+  xmat <- matrix(rep(x, 100000), nrow = length(x))
+  res <- apply(xmat, 1, rule.resp.neg
+               , noise = perc.noise
+               , boundary = boundary
+               , neg.noise = neg.noise
+               , neg = neg)
+  return(colMeans(res))
+}
+
+## Response rules
+
+## Deliberate rule-based respongind is perfect responding
+rule.resp.neg <- function(x, boundary, noise = 0, neg.noise = 0.2, neg = T){
+  x.perc <- rnorm(length(x), x, noise)
+  p <- ifelse(x.perc > boundary, 1, 0)
+  z.noise <- dnorm(qnorm(x), sd = neg.noise) * neg.noise
+  dir.noise <- sample(c(-1, 1), size = length(x), replace = T)
+  if(neg == T){
+    p.noise <- p + z.noise * dir.noise
+    p <- ifelse(p.noise>1, 1, ifelse(p.noise<0, 0, p.noise))
+  }
+  resp(p)
+}
+
+plot(sim.curve.neg(0.5, 0.01, 0, F), type = "l", lwd = 2, col = "darkgray", ylab = "Prop true responses", xlab = "Percent")
+lines(sim.curve.neg(0.5, 0.01, .2, T), col = "slateblue", lwd = 2) # 1% perceptual noise
+legend("bottomright", legend = c("More than half", "Fewer than half"), fill = c("darkgray", "slateblue"), bty = "n")
+```
+
+**Vague quantifier** implies sampling the boundary from a distribution for each trial new.
+
+```{r sim-fun-vague, cache = T}
+## One response
+resp <- function(p) rbinom(length(p), 1, p)
+
+## Curve simulation
+sim.curve.vague <- function(boundary, perc.noise, bound.noise){
+  x <- seq(0, 1, .01)
+  xmat <- matrix(rep(x, 100000), nrow = length(x))
+  res <- apply(xmat, 1, resp.vague
+               , noise = perc.noise
+               , boundary = boundary
+               , bound.noise = bound.noise)
+  return(colMeans(res))
+}
+
+## Response rules
+
+## Deliberate rule-based respongind is perfect responding
+resp.vague <- function(x, boundary, noise = 0, bound.noise = 0.2){
+  x.perc <- rnorm(length(x), x, noise)
+  bound.perc <- rnorm(length(x), boundary, bound.noise)
+  p <- ifelse(x.perc > bound.perc, 1, 0)
+  resp(p)
+}
+
+plot(sim.curve.vague(0.5, 0.01, 0), type = "l", lwd = 2, col = "darkgray", ylab = "Prop true responses", xlab = "Percent")
+lines(sim.curve.vague(0.5, 0.01, .1), col = "slateblue", lwd = 2) # 1% perceptual noise
+legend("bottomright", legend = c("More than half", "Fewer than half"), fill = c("darkgray", "slateblue"), bty = "n")
+```
+
+
+
+
+## Study 2 {.tabset .tabset-fade}
+
+```{r, eval = F}
+# Those people participated twice: 3,4,5,9,10,14,21,30,33,34,48,56,69,81,17,18
+# Others: 1,25,29,43,46,58,70,72,74, 82.
+
+dat <- read.csv("data/exp1-replication-v2-trials.csv")
+head(dat)
+table(dat$quant, dat$workerid)[, 1]
+hist(dat$percent)
+table(dat$percent>50)
+
+table(dat$response, dat$quant)
+dat$qq <- as.numeric(dat$quant) %in% c(5, 6)
+
+dat <- subset(dat, qq == T)
+prop <- tapply(as.numeric(dat$response) - 1, list(dat$percent, dat$quant), mean)
+matplot(as.numeric(rownames(prop)), prop
+        , pch = 19, col = c("firebrick", "slateblue")
+        , xlab = "Percent")
+abline(v = 50, lwd = 1.5, col = "darkgrey")
+```
