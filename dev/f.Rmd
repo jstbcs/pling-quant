@@ -21,12 +21,6 @@ library(corrplot)
 library(factoextra)
 ```
 
-**To Do:**
-
-- Extend to other quantifiers (few and fewer than half).
-- Look at symmetry models for fewer than half vs. more than half, and few vs. many.
-- Repeat analysis for study 2 data.
-
 ## The Task (How I understand it)
 
 In this task, participants have to evaluate whether a certain quantifier logically describes a scenario. Scenarios are percentages of, for example, apples that are green. Say, 20% of apples are green, is the statement that "most of the apples are green" true or false? Percentages are drawn from a uniform ensuring that as many trials have more than 50% as have less than 50%. The quantifiers of interest are *Few*, *Fewer than half*, *Many*, *Most* and *More than half*. The idea is that *More than half* is defined by more than 50% for everyone while *Most* may be more subjective, and it may be more than *More than half* for everyone. Additionally, we may inspect the relationship between *Many* and *More than half*, and also symmetries between mirrored quantifiers.
@@ -37,35 +31,39 @@ I think we could use a probit regression with a participant-specific quantifier 
 
 ### Model
 
-**Disclaimer:** I have tweaked the model yesterday to accommodate the added quantifier *Many* and the model comparison I planned. Therefore, this section probably needs to be updated slightly.
-
-Let $i$ indicate participants, $i = 1, \ldots, I$, $j$ indicate the quantifier, $j = 1, \ldots, 5$, and $k$ indicate the trial for each quantifier, $k = 1, \ldots, K_{ij}$.^[Originally, $K_{ij} = 50$. But this value may be reduced after cleaning on the trial level.] Then $Y_{ijk}$ is the $i$th participant's response to the $j$th quantifier in the $k$th trial, and $Y_{ijk} = 1$ if participants indicate *true*, and $Y_{ijk} = 0$ if participant indicate *false*. Then, we may model $Y_{ijk}$ as a Bernoulli, using the probit link function on the probabilities:
+Let $i$ indicate participants, $i = 1, \ldots, I$, $j$ indicate the quantifier, $j = 1, \ldots, 5$, and $k$ indicate the trial for each quantifier, $k = 1, \ldots, K_{ij}$.^[Originally, $K_{ij} = 50$. But this value may be reduced after cleaning on the trial level.] Then $Y_{ijk}$ is the $i$th participant's response to the $j$th quantifier in the $k$th trial, and $Y_{ijk} = 1$ if participants indicate *true*, and $Y_{ijk} = 0$ if participant indicate *false*. Then, we may model $Y_{ijk}$ as a Bernoulli, using the logit link function on the probabilities:
 
 \begin{align*}
 Y_{ijk} &\sim \mbox{Bernoulli}(\pi_{ijk}),\\
-\mu_{ijk} &= \Phi^{-1}(\pi_{ijk}),\\
+\mu_{ijk} &= \text{logit}^{-1}(\gamma_{ij} + (1 - 2 \gamma_{ij}) \pi_{ijk}),\\
 \end{align*}
 
-where the second line maps the probability space of $\pi$ onto the real space of $\mu$. We may now place a linear model on $\mu_{ijk}$:
+where the second line maps the probability space of $\pi$ onto the real space of $\mu$. There is an additional parameter in there, $\gamma_{ij}$, which is the probability of making a response error on either side (erroneously saying true, or erroneously saying false). Note that each person-quantifier combination has its own response error parameter. We may now place a linear model on $\mu_{ijk}$:
 
-\[\mu_{ijk} = \beta_{i0} + l_{ijk}\beta_{i1} + h_{ijk}\beta_{i2} + z_{i1} \beta_{i3} +  + z_{i2} \beta_{i4} +  + z_{i3} \beta_{i5} +  + z_{i4} \beta_{i6} + z_{i5} \beta_{i7},\]
+\[\mu_{ijk} = \frac{c_{ijk} - \beta_{ij}}{\alpha_{ij}},\]
 
-where $l_{ijk}$, $h_{ijk}$ and $z_{ij}$ are predictors: $l_{ijk}$ is zero for percentages above 50%, and indicates the centered percentage otherwise; $xh{ijk}$ is zero for percentages below 50%, and indicates the centered percentage otherwise, and $z_{ij}$ is an indicator function denoting the respective quantifier (e.g., $z_{i1} = 1$ for the quantifier *Fewer*, and $z_{i1} = 0$ otherwise). Parameters $\beta_{i0}$ are random intercepts, $\beta_{i1}$ are random percentage effects for percentages below 50%, $\beta_{i12}$ are random percentage effects for percentages above 50%, and $\beta_{i3}$ to $\beta_{i7}$ are random quantifier effects. For now, I will place the following priors:
+where $c_{ijk}$ indicates the centered percentage, parameters $\beta_{ij}$ indicate the threshold, and parameters $\alpha_{ij}$ correspond to the vagueness of the quantifier. For now, I will place the following priors:
 
 \begin{align*}
-\beta_{i0} &\sim \mbox{Normal}(0, \sigma_0^2),\\
-\beta_{i1} &\sim \mbox{Normal}(\delta_1, \sigma_1^2),\\
-\beta_{i2} &\sim \mbox{Normal}(\delta_2, \sigma_2^2),\\
-\beta_{i3} &\sim \mbox{Normal}(\delta_3, \sigma_3^2).\\
-\beta_{i4} &\sim \mbox{Normal}(\delta_4, \sigma_4^2).\\
-\beta_{i5} &\sim \mbox{Normal}(\delta_5, \sigma_5^2).\\
-\beta_{i6} &\sim \mbox{Normal}(\delta_6, \sigma_6^2).\\
-\beta_{i7} &\sim \mbox{Normal}(\delta_7, \sigma_7^2).\\
+\gamma_{ij} &\sim \mbox{Beta}(2, 20),\\
+\alpha_{ij} &\sim \mbox{log-Normal}(\nu, \sigma_\alpha^2),\\
+\nu &\sim \mbox{Normal}(0, 5^2),\\
+\sigma_\alpha^2 &\sim \mbox{Inverse-Gamma}(2, .2).\\
+\delta &\sim \mbox{Normal}(0, 5^2).\\
+\sigma^2 &\sim \mbox{Inverse-Gamma}(2, .2).\\
 \end{align*}
 
 **Needed:** Proper description of prior settings.
 
-### Simulating mistakes
+**Notes Julia:** These priors should be fairly wide and uninformative. Actually, the priors on $\nu$ and $\delta$ might be a bit too wide for a logit model. We might want to adjust these to standard normals.
+
+```{r}
+# prior on gamma
+curve(dbeta(x, 2, 20), from = 0, to = 1)
+
+# prior on sigma^2
+curve(MCMCpack::dinvgamma(x, 2, .2), from = 0, to = 2)
+```
 
 ## Study 1 {.tabset .tabset-fade}
 
@@ -591,7 +589,7 @@ bfmamo <- postneg/priorneg
 
 ## Additional Analyses {.tabset .tabset-fade}
 
-### Clustering
+### Clustering {.tabset .tabset-fade}
 
 As discussed in our meetings, we wanted to do a cluster analysis on the parameters from the probit model to assess whether there are distinct groups of individuals with certain parameter patterns. For example, we hypothesized that there might be a group of individuals who interpret the quantifier *Most* as *More than half* and therefore have a threshold close to 50% (or 0 in the current parameterization). Here, we do an extensive cluster analysis on 1. the parameters corresponding to the quantifier *Most*, 2. the parameters corresponding to the quantifier *Many*, and 3. an additional analysis on all parameter from all models.
 
@@ -830,6 +828,9 @@ draw.ind.clust(allpars[, 13:15], cluster = res.clust.all$cluster, main = "Most")
 
 ### Simulation
 
+**Notes Julia:** I wouldn't call it a proper simulation study in the paper. It is more an exploration of data patterns that are expected if certain parameters are manipulated. The ones we are interested here are response noise/errors, which means after the perceived stimulus is compared to the threshold and a decision is made, there are additional processes that result in erroneous responding for some trials. Importantly, this **response error should be independent of the item.** The second parameter we are interested in is **vagueness which is variability in the perceived threshold on any item.** Vagueness, other than response error, adds noise in the decision process---it makes the threshold shift somewhat with every decision. The figure (the last one in this section) highlights the distinguishable effect of these two parameters on responses. Of course, the response patterns shown here are idealized, and we cannot expect any person's responses to look exactly like this. But it provides concrete hypotheses on data patterns that arise if both forms of variability are in the data.
+
+
 Simple rule-based responding by setting a fixed boundary. The lines represent different levels of perceptual noise. Where this source of noise would come from in our experiment is completely unclear to me. 
 
 ```{r sim-fun-rule}
@@ -964,10 +965,72 @@ lines(sim.curve.vague(0.5, 0.01, .1), col = "slateblue", lwd = 2) # 1% perceptua
 legend("bottomright", legend = c("More than half", "Fewer than half"), fill = c("darkgray", "slateblue"), bty = "n")
 ```
 
+**Notes Julia:** Putting it all together, here is a figure with a sort of default response curve for optimal responding, one curve with only response error, one with only vagueness, and one combined.
+
+**Notes Julia:** The figure below also highlights two aspects of our model that might be relevant. First, for any item the probability of making a response error is the same. This uniformity implies a uniform offset from perfect responding that is also symmetric for true/false responses (we do not model a bias towards one of the responses). Second, the effect of vagueness is also assumed to be symmetric around the threshold. These assumptions are both theoretically plausible and help make the model identifiable. 
+
+```{r par-explanation-figure, cache = T}
+## One response
+get.resp <- function(p) rbinom(length(p), 1, p)
+
+## Curve simulation
+sim.curve <- function(boundary, perc.noise, resp.error, bound.noise){
+  x <- seq(0, 1, .01)
+  xmat <- matrix(rep(x, 100000), nrow = length(x))
+  res <- apply(xmat, 1, resp
+               , noise = perc.noise
+               , boundary = boundary
+               , resp.error = resp.error
+               , bound.noise = bound.noise
+               )
+  return(colMeans(res))
+}
+
+## Response rule: respond TRUE if perceived quantity is greater than perceived threshold. After this is decided the response errors kick in. 
+resp <- function(x, boundary, noise = 0, resp.error = 0.05, bound.noise = 0.2){
+  x.perc <- rnorm(length(x), x, noise)
+  bound.perc <- rnorm(length(x), boundary, bound.noise)
+  p <- ifelse(x.perc > bound.perc, 1, 0)
+  p.noise <- msm::rtnorm(length(p)
+                         , p
+                         , ifelse(resp.error == 0, .00001, resp.error)
+                         , lower = 0, upper = 1)
+  get.resp(p.noise)
+}
+# x <- .2; boundary <- .5; noise <- 0; resp.error <- 0; bound.noise <- 0.2 
+
+default.curve <- sim.curve(boundary = 0.5
+                           , perc.noise = 0.01
+                           , resp.error = 0
+                           , bound.noise = 0)
+resp.err.curve <- sim.curve(boundary = 0.5
+                           , perc.noise = 0.01
+                           , resp.error = 0.15
+                           , bound.noise = 0)
+vague.curve <- sim.curve(boundary = 0.5
+                           , perc.noise = 0.01
+                           , resp.error = 0
+                           , bound.noise = 0.1)
+vague.resp.err.curve <- sim.curve(boundary = 0.5
+                           , perc.noise = 0.01
+                           , resp.error = 0.15
+                           , bound.noise = 0.1)
+
+
+par(mgp = c(2, .7, 0))
+plot(default.curve, type = "l", lwd = 2, col = "darkgray", ylab = "Proportion of 'true' responses", xlab = "Percent")
+lines(vague.curve, col = "slateblue", lwd = 2) # increased vagueness, no response error
+lines(resp.err.curve, col = "firebrick", lwd = 2) # increased response error, no vagueness
+lines(vague.resp.err.curve, col = "darkgreen", lwd = 2) # both
+
+legend("bottomright", legend = c("Ideal responding", "Vague", "Response error", "Vague + response error"), fill = c("darkgray", "slateblue", "firebrick", "darkgreen"), bty = "n")
+```
 
 
 
 ## Study 2 {.tabset .tabset-fade}
+
+**Notes Julia:** Yeah, I would leave study 2 out for now, the results are clearly uninterpretable; needs better cleaning at some point.
 
 ### Data
 
