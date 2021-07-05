@@ -35,8 +35,10 @@ Let $i$ indicate participants, $i = 1, \ldots, I$, $j$ indicate the quantifier, 
 
 \begin{align*}
 Y_{ijk} &\sim \mbox{Bernoulli}(\pi_{ijk}),\\
-\mu_{ijk} &= \text{logit}^{-1}(\gamma_{ij} + (1 - 2 \gamma_{ij}) \pi_{ijk}),\\
+\pi_{ijk} &= \gamma_{ij} + (1 - 2 \gamma_{ij}) \text{logit}^{-1}(\mu_{ijk}),\\
 \end{align*}
+
+$\pi_{ijk} = \gamma_{ij} + (1 - 2 \gamma_{ij}) \text{logit}^{-1}(\mu_{ijk})$
 
 where the second line maps the probability space of $\pi$ onto the real space of $\mu$. There is an additional parameter in there, $\gamma_{ij}$, which is the probability of making a response error on either side (erroneously saying true, or erroneously saying false). Note that each person-quantifier combination has its own response error parameter. We may now place a linear model on $\mu_{ijk}$:
 
@@ -46,11 +48,12 @@ where $c_{ijk}$ indicates the centered percentage, parameters $\beta_{ij}$ indic
 
 \begin{align*}
 \gamma_{ij} &\sim \mbox{Beta}(2, 20),\\
-\alpha_{ij} &\sim \mbox{log-Normal}(\nu, \sigma_\alpha^2),\\
-\nu &\sim \mbox{Normal}(0, 5^2),\\
-\sigma_\alpha^2 &\sim \mbox{Inverse-Gamma}(2, .2).\\
-\delta &\sim \mbox{Normal}(0, 5^2).\\
-\sigma^2 &\sim \mbox{Inverse-Gamma}(2, .2).\\
+\beta_{ij} &\sim \mbox{Normal}(\delta_j, \sigma_j^2),\\
+\alpha_{ij} &\sim \mbox{log-Normal}(\nu_j, \sigma_{\alpha, j}^2),\\
+\nu_j &\sim \mbox{Normal}(0, 5^2),\\
+\sigma_{\alpha, j}^2 &\sim \mbox{Inverse-Gamma}(2, .2).\\
+\delta_j &\sim \mbox{Normal}(0, 5^2).\\
+\sigma^2_j &\sim \mbox{Inverse-Gamma}(2, .2).\\
 \end{align*}
 
 **Needed:** Proper description of prior settings.
