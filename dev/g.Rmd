@@ -81,6 +81,11 @@ dat <- read.csv("data/exp1-replication-trials.csv")
 head(dat)
 nrow(dat)
 
+## participant 27
+dat27 <- subset(dat, workerid == 27)
+dat27$percentabove <- factor(c(dat27$percent > 50), labels = c("below50", "above50"))
+tapply(as.numeric(as.factor(dat27$response)) - 1, list(dat27$quant, dat27$percentabove), mean, na.rm = TRUE)
+
 # Exclusion based on Sonia's code
 ## Participant-level
 dat <- subset(dat, !(workerid %in% exclude))
@@ -589,6 +594,66 @@ postneg
 bfmamo <- postneg/priorneg
 ```
 
+#### Comparing "Most" and "Many"
+
+```{r thresholds-exp1-3, fig.asp=1.5}
+layout(matrix(c(1,2,3,3), ncol = 2, byrow = T), heights = c(.4, .6))
+
+plot(pbeta3 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "Many", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+plot(pbeta5 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "Most", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+
+plot(pbeta3 * 100 + 50, pbeta5 * 100 + 50
+     , pch = 19, col = adjustcolor(1, .5)
+     , ylab = "Threshold for 'most'"
+     , xlab = "Threshold for 'many'"
+     , xlim = c(40, 65)
+     , ylim = c(40, 65)
+     )
+abline(0, 1, lwd = 1.5, col = "firebrick")
+```
+
+```{r CrIs-3, eval = T}
+for(i in 1:ncol(mdiff)){
+  mdiff[,i] <- apply(cbind(mbeta3[,i], mbeta5[,i]), 1, function(x) x[2] - x[1])
+}
+pCIs <- apply(mdiff, 2, quantile, probs = c(.025, .975)) 
+pThresh <- apply(mdiff, 2, mean)
+```
+
+```{r, eval = T}
+indord <- order(pThresh)
+plotCI(1:I, pThresh[indord]
+       , li = pCIs[1, indord], ui = pCIs[2, indord]
+       , pch = 21, pt.bg = "slateblue"
+       , ylab = "Most - Many"
+       , xlab = "Participant")
+abline(h = 0)
+```
+
+**Bayes factor assessing whether *More* is more than *More than half* for everyone.**
+
+```{r, eval = T}
+## Prior probability
+M <- 100000
+s2 <- rinvgamma(M, 2, .1)
+beta4 <- rnorm(M, 0, .1)
+
+prioreff <- exp(pnorm(0, beta4, sqrt(s2), lower.tail = T, log.p = T) * I)
+priorneg <- mean(prioreff)
+
+## Posterior Probability
+targ <- mdiff
+good <- targ < 0 #evaluate their sign
+all.good <- apply(good, 1, mean) #evaluate how often all theta estimates are postitive
+postneg <- mean(all.good == 1) #Posterior probability of all theta_i being positive
+
+# priorneg
+# postneg
+
+bfmomo <- postneg/priorneg
+```
 
 ## Additional Analyses {.tabset .tabset-fade}
 
