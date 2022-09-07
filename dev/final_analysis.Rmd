@@ -1,0 +1,1663 @@
+---
+title: "Individual Differences of Quantifier Interpretation"
+author: "Julia Haaf"
+date: "January 2021"
+bibliography      : "lab.bib"
+output: 
+  html_document:
+    theme: cerulean
+    highlight: tango
+    code_folding: hide
+---
+
+```{r, message=F}
+library("dplyr")
+library("MCMCpack")
+library("LaplacesDemon")
+library("rstan")
+library("plotrix")
+library(RColorBrewer)
+library(corrplot)
+library(factoextra)
+library(psych)
+library(MASS)
+library(klaR)
+library(rrcov)
+library(olsrr) #SR
+```
+
+## The Task (How I understand it)
+
+In this task, participants have to evaluate whether a certain quantifier logically describes a scenario. Scenarios are percentages of, for example, apples that are green. Say, 20% of apples are green, is the statement that "most of the apples are green" true or false? Percentages are drawn from a uniform ensuring that as many trials have more than 50% as have less than 50%. The quantifiers of interest are *Few*, *Fewer than half*, *Many*, *Most* and *More than half*. The idea is that *More than half* is defined by more than 50% for everyone while *Most* may be more subjective, and it may be more than *More than half* for everyone. Additionally, we may inspect the relationship between *Many* and *More than half*, and also symmetries between mirrored quantifiers.
+
+## Modeling Approach {.tabset .tabset-fade}
+
+I think we could use a probit regression with a participant-specific quantifier effect and a participant-specific effect of percentage used. This way we could at least assess whether *Most* is more than *More than half* by defining the quantifier effect as a contrast between the two. It could even be tested in this framework whether *More than half* is 50% for everyone.
+
+### Model
+
+Let $i$ indicate participants, $i = 1, \ldots, I$, $j$ indicate the quantifier, $j = 1, \ldots, 5$, and $k$ indicate the trial for each quantifier, $k = 1, \ldots, K_{ij}$.^[Originally, $K_{ij} = 50$. But this value may be reduced after cleaning on the trial level.] Then $Y_{ijk}$ is the $i$th participant's response to the $j$th quantifier in the $k$th trial, and $Y_{ijk} = 1$ if participants indicate *true*, and $Y_{ijk} = 0$ if participant indicate *false*. Then, we may model $Y_{ijk}$ as a Bernoulli, using the logit link function on the probabilities:
+
+\begin{align*}
+Y_{ijk} &\sim \mbox{Bernoulli}(\pi_{ijk}),\\
+\pi_{ijk} &= \gamma_{ij} + (1 - 2 \gamma_{ij}) \text{logit}^{-1}(\mu_{ijk}),\\
+\end{align*}
+
+$\pi_{ijk} = \gamma_{ij} + (1 - 2 \gamma_{ij}) \text{logit}^{-1}(\mu_{ijk})$
+
+where the second line maps the probability space of $\pi$ onto the real space of $\mu$. There is an additional parameter in there, $\gamma_{ij}$, which is the probability of making a response error on either side (erroneously saying true, or erroneously saying false). Note that each person-quantifier combination has its own response error parameter. We may now place a linear model on $\mu_{ijk}$:
+
+$\[\mu_{ijk} = \frac{c_{ijk} - \beta_{ij}}{\alpha_{ij}},\]$
+
+where $c_{ijk}$ indicates the centered percentage, parameters $\beta_{ij}$ indicate the threshold, and parameters $\alpha_{ij}$ correspond to the vagueness of the quantifier. For now, I will place the following priors:
+
+\begin{align*}
+\gamma_{ij} &\sim \mbox{Beta}(2, 20),\\
+\beta_{ij} &\sim \mbox{Normal}(\delta_j, \sigma_j^2),\\
+\alpha_{ij} &\sim \mbox{log-Normal}(\nu_j, \sigma_{\alpha, j}^2),\\
+\nu_j &\sim \mbox{Normal}(0, 5^2),\\
+\sigma_{\alpha, j}^2 &\sim \mbox{Inverse-Gamma}(2, .2).\\
+\delta_j &\sim \mbox{Normal}(0, 5^2).\\
+\sigma^2_j &\sim \mbox{Inverse-Gamma}(2, .2).\\
+\end{align*}
+
+**Needed:** Proper description of prior settings.
+
+**Notes Julia:** These priors should be fairly wide and uninformative. Actually, the priors on $\nu$ and $\delta$ might be a bit too wide for a logit model. We might want to adjust these to standard normals.
+
+**SR:** 
+$response = \frac{Asymptote}{1+\exp{(midpoint-proportion)/scale)}$
+
+
+```{r}
+# prior on gamma
+curve(dbeta(x, 2, 20), from = 0, to = 1)
+
+# prior on sigma^2
+curve(MCMCpack::dinvgamma(x, 2, .2), from = 0, to = 2)
+```
+
+## Study 1 {.tabset .tabset-fade}
+
+### Data
+
+```{r}
+exclude <- c(0, 1, 5, 18, 32, 39, 49, 52, 53, 58, 62, 81, 82, 83, 85, 86, 87, 27, 76)
+ # 0,1,5,39,18,32,49,52,53,58,62,81,82,83,85,86,87,76
+exclude2 <- c(27, 76)
+
+dat <- read.csv("data/exp1-replication-trials.csv")
+head(dat)
+nrow(dat)
+
+# Exclusion based on Sonia's code
+## Participant-level
+dat <- subset(dat, !(workerid %in% exclude))
+nrow(dat)
+
+## Trial-level
+dat <- subset(dat, read_and_decide_time > 300)
+dat <- subset(dat, read_and_decide_time < 2500)
+nrow(dat)
+
+table(dat$quant, dat$workerid)[, 1]
+hist(dat$percent)
+table(dat$percent>50)
+
+table(dat$response, dat$quant)
+dat$qq <- as.numeric(factor(dat$quant))
+
+dat <- subset(dat, qq %in% 2:6)
+prop <- tapply(as.numeric(factor(dat$response)) - 1, list(dat$percent, dat$qq), mean, na.rm = T)
+```
+
+```{r fig-quant}
+qcols <- brewer.pal(5, "Dark2")
+
+matplot(as.numeric(rownames(prop)), prop
+        , pch = 19, col = qcols
+        , xlab = "Percent", ylab = "Proportion 'true' responses"
+        , frame.plot = F)
+abline(v = 50, lwd = 1.5, col = "darkgrey")
+abline(h = .50, lwd = 1.5, col = "darkgrey")
+legend(75, .7, legend = c("Few", "Fewer than half", "Many", "More than half", "Most")
+       , fill = qcols, bg = "white", box.col = "white")
+```
+
+I now recode the responses to correspond to the expected direction of response. I will therefore flip TRUE and FALSE responses for the quantifiers *few* and *fewer than half*.
+
+```{r}
+dat$resp <- case_when(
+  dat$qq %in% 4:6 ~ as.numeric(factor(dat$response)) - 1,
+  dat$qq %in% 2:3 ~ -as.numeric(factor(dat$response)) + 2
+)
+```
+
+```{r fig-quant-2}
+prop <- tapply(dat$resp, list(dat$percent, dat$qq), mean, na.rm = T)
+qcols <- brewer.pal(5, "Dark2")
+
+matplot(as.numeric(rownames(prop)), prop
+        , pch = 19, col = qcols
+        , xlab = "Percent", ylab = "Proportion 'true' responses"
+        , frame.plot = F)
+abline(v = 50, lwd = 1.5, col = "darkgrey")
+abline(h = .50, lwd = 1.5, col = "darkgrey")
+legend(75, .7, legend = c("Few", "Fewer than half", "Many", "More than half", "Most")
+       , fill = qcols, bg = "white", box.col = "white")
+```
+
+### Estimation
+
+#### Priors
+
+```{r}
+x <- seq(0, 5, .01)
+ysig <- dlnorm(x, .1, .5)
+ysig2 <- 2 * x * dinvgamma(x^2, 2, .1)
+plot(x, ysig, type = "l")
+lines(x, ysig2, col = 2)
+ydelt <- rnorm(x, 0, .1)
+
+M <- 10000
+ysig2 <- rinvgamma(M, 2, .1)
+ydelt <- rnorm(M, 0, .1)
+
+prioreff <- rnorm(M, ydelt, sqrt(ysig2))
+
+layout(matrix(1:4, ncol = 2, byrow = T))
+hist(prioreff)
+hist(ydelt)
+hist(pnorm(prioreff), xlim = c(0, 1))
+hist(pnorm(ydelt), xlim = c(0, 1))
+```
+
+#### Model
+
+```{stan output.var= 'logmod', cache= T}
+data {
+  int<lower=1> D;                     // #Dimensions of the model
+  int<lower=0> N;                     // #Observations
+  int<lower=1> I;                     // #Participants
+  int<lower=0,upper=1> y[N];          // Data 0,1
+  vector[N] cperc;                    // Centered Percentages
+  int<lower=1,upper=I> sub[N];        // participant vector
+  int<lower=0,upper=1> few[N];      // Few
+  int<lower=0,upper=1> fewer[N];      // Fewer than half
+  int<lower=0,upper=1> many[N];      // Many
+  int<lower=0,upper=1> more[N];      // More than half
+  int<lower=0,upper=1> most[N];      // Most
+  int<lower=0,upper=1> above[N];      // Above 50 percent?
+}
+
+parameters {
+  real delta[D];                      // Means of betas
+  real<lower=0> sigma2[D];             // variance of betas
+  vector[D] beta[I];                  // vectors of betas
+  real nu[D];                      // Means of alphas
+  real<lower=0> sigma2alpha[D];       // variance of alphas
+  vector<lower=0>[D] alpha[I];                  // vectors of alphas
+  vector<lower=0,upper=1>[D] gamma[I];     //vector of gammas
+}
+
+transformed parameters {
+  real<lower=0> sigma[D];
+  real<lower=0> sigmaalpha[D];
+  sigma = sqrt(sigma2);
+  sigmaalpha = sqrt(sigma2alpha);
+}
+
+model {
+  vector[N] mu;
+  vector[N] p;
+  delta ~ normal(0, 5);
+  sigma2 ~ inv_gamma(2, .2);
+  nu ~ normal(0, 5);
+  sigma2alpha ~ inv_gamma(2, .2);
+  for (i in 1:I)
+    beta[i] ~ normal(delta, sigma);
+  for (i in 1:I)
+    alpha[i] ~ lognormal(nu, sigmaalpha);
+  for (i in 1:I)
+    gamma[i] ~ beta(2, 20);
+  for (n in 1:N)
+    mu[n] = few[n] * (cperc[n] - beta[sub[n], 1]) / alpha[sub[n], 1] + fewer[n] * (cperc[n] - beta[sub[n], 2]) / alpha[sub[n], 2] + many[n] * (cperc[n] - beta[sub[n], 3]) / alpha[sub[n], 3] + more[n] * (cperc[n] - beta[sub[n], 4]) / alpha[sub[n], 4] + most[n] * (cperc[n] - beta[sub[n], 5]) / alpha[sub[n], 5];
+  for (n in 1:N)
+    p[n] = few[n] * gamma[sub[n], 1] + fewer[n] * gamma[sub[n], 2] + many[n] * gamma[sub[n], 3] + more[n] * gamma[sub[n], 4] + most[n] * gamma[sub[n], 5] + (1 - 2 * (few[n] * gamma[sub[n], 1] + fewer[n] * gamma[sub[n], 2] + many[n] * gamma[sub[n], 3] + more[n] * gamma[sub[n], 4] + most[n] * gamma[sub[n], 5])) * inv_logit(mu[n]);
+  y ~ bernoulli(p);
+}
+```
+
+```{r init, cache = T}
+getDat <- function(dat){
+  # dat <- subset(dat, qq %in% 4:6)
+  
+  D <- 5
+  N <- nrow(dat)
+  I <- length(unique(dat$workerid))
+  
+  y <- dat$resp
+  cperc <- (dat$percent - 50) / 100
+  sub <- as.numeric(factor(dat$workerid))
+  few <- ifelse(dat$qq == 2, 1, 0)
+  fewer <- ifelse(dat$qq == 3, 1, 0)
+  many <- ifelse(dat$qq == 4, 1, 0)
+  more <- ifelse(dat$qq == 5, 1, 0)
+  most <- ifelse(dat$qq == 6, 1, 0)
+  above <- as.numeric(cperc > 0)
+  
+  # res <- glm(y ~ cperc + few + fewer + many + more + most, family = binomial(link = "probit"), 
+  #   data = dat)
+  
+  standat <- list(D = D, N = N, I = I, y = y, cperc = cperc, sub = sub,
+                  few = few, fewer = fewer, many = many, more = more, most = most
+                  , above = above)  
+  return(standat)
+}
+
+myRunner <- function(standat, iter = 1000, warmup = 400, mod, nchains = 4, ...){
+  inits <- function(...){
+    list(delta = runif(standat$D, -.5, .5)
+         , sigma2 = runif(standat$D, 1, 1.5)
+         , beta = matrix(runif(standat$I * standat$D, -1, 1), nrow = standat$I, ncol = standat$D)
+         , nu = runif(standat$D, .1, 1)
+         , sigma2alpha = runif(standat$D, 1, 1.5)
+         , alpha = matrix(runif(standat$I * standat$D, .1, 1), nrow = standat$I, ncol = standat$D))
+  }
+  # inits <- list(c1 = inits)
+  fit <- sampling(mod, verbose=T,
+                  data = standat, 
+                  iter = iter,
+                  warmup = warmup,
+                  chains = nchains,
+                  cores = nchains,
+                  # init = lapply(1:4, inits),
+                  pars = c("delta", "nu", "beta", "alpha", "gamma", "sigma2", "sigma2alpha")
+                  , ...)
+  return(fit)}
+
+predat <- getDat(dat)
+```
+
+```{r run-logmod, cache = T, eval = F, results = "hide"}
+rerun <- T
+logmodfit <- myRunner(predat
+                      , iter = 2500
+                      , warmup = 750
+                      , mod = logmod
+                      , control = list(adapt_delta = .97, max_treedepth = 14)
+                      , nchains = 6)
+save(logmodfit, file = "outstudy1e.rda")
+```
+
+```{r, cache = T}
+load("outstudy1e.rda")
+```
+
+- Here is an initial check how well the chains mixed. This is a bit of a problem for the model. I may have to reparameterize to set one quantifier (more than half?) as default.
+
+```{r}
+hist(summary(logmodfit)$summary[,"Rhat"]
+     , breaks = 100
+     , main = ""
+     , xlab =  "Rhat")
+
+hist(summary(logmodfit)$summary[,"n_eff"]
+     , breaks = 100
+     , main = ""
+     , xlab =  "Number of effective samples")
+```
+
+### Results
+
+- The overall estimates of the response curves for the three quantifiers.
+
+```{r, fig.asp=1.2}
+plot(logmodfit, pars = paste0("gamma[", 1:71, ",1]"))
+plot(logmodfit, pars = paste0("gamma[", 1:71, ",2]"))
+plot(logmodfit, pars = paste0("gamma[", 1:71, ",3]"))
+plot(logmodfit, pars = paste0("gamma[", 1:71, ",4]"))
+plot(logmodfit, pars = paste0("gamma[", 1:71, ",5]"))
+```
+
+```{r}
+plot(logmodfit, pars = "sigma2")
+plot(logmodfit, pars = "sigma2alpha")
+
+```
+
+
+```{r inspect-logmod, fig.asp=1.2}
+pEst <- as.matrix(logmodfit) #get parameter estimates form the logmodfit
+dim(pEst)
+
+pMeans <- colMeans(pEst) 
+
+I <- predat$I
+pdelta1 <- pMeans[1]
+pdelta2 <- pMeans[2]
+pdelta3 <- pMeans[3]
+pdelta4 <- pMeans[4]
+pdelta5 <- pMeans[5]
+pnu1 <- pMeans[6]
+pnu2 <- pMeans[7]
+pnu3 <- pMeans[8]
+pnu4 <- pMeans[9]
+pnu5 <- pMeans[10]
+pbeta1 <- pMeans[10 + 1:I]
+pbeta2 <- pMeans[10 + I + 1:I]
+pbeta3 <- pMeans[10 + 2 * I + 1:I]
+pbeta4 <- pMeans[10 + 3 * I + 1:I]
+pbeta5 <- pMeans[10 + 4 * I + 1:I]
+palpha1 <- pMeans[10 + 5 * I + 1:I]
+palpha2 <- pMeans[10 + 6 * I + 1:I]
+palpha3 <- pMeans[10 + 7 * I + 1:I]
+palpha4 <- pMeans[10 + 8 * I + 1:I]
+palpha5 <- pMeans[10 + 9 * I + 1:I]
+pgamma1 <- pMeans[10 + 10 * I + 1:I]
+pgamma2 <- pMeans[10 + 11 * I + 1:I]
+pgamma3 <- pMeans[10 + 12 * I + 1:I]
+pgamma4 <- pMeans[10 + 13 * I + 1:I]
+pgamma5 <- pMeans[10 + 14 * I + 1:I]
+
+cperc <- (1:100 - 50)/100
+curve.calc <- function(x, p = cperc){
+  a <- (p - x[1])/x[2]
+  x[3]  + (1 - 2* x[3]) * exp(a)/(exp(a) + 1)
+}  
+
+pps1 <- curve.calc(c(pdelta1, exp(pnu1), mean(pgamma1)))
+pps2 <- curve.calc(c(pdelta2, exp(pnu2), mean(pgamma2)))
+pps3 <- curve.calc(c(pdelta3, exp(pnu3), mean(pgamma3)))
+pps4 <- curve.calc(c(pdelta4, exp(pnu4), mean(pgamma4)))
+pps5 <- curve.calc(c(pdelta5, exp(pnu5), mean(pgamma5)))
+
+layout(matrix(1:6, ncol = 2, byrow = T))
+
+plot(1:100, pps1, type = "l", lwd = 2, col = qcols[1], ylim = c(0,1)
+     , ylab = "Probability 'true' response", xlab = "Percent")
+lines(1:100, pps2, lwd = 2, col = qcols[2])
+lines(1:100, pps3, lwd = 2, col = qcols[3])
+lines(1:100, pps4, lwd = 2, col = qcols[4])
+lines(1:100, pps5, lwd = 2, col = qcols[5])
+abline(h = .5, col = adjustcolor(1, .5))
+abline(v = 50, col = adjustcolor(1, .5))
+legend("bottomright", legend = c("Few", "Fewer than half", "Many", "More than half", "Most")
+       , fill = qcols, bty = "n")
+
+res1 <- apply(cbind(pbeta1, palpha1, pgamma1), 1, curve.calc)
+matplot(res1, type = "l", lty = 1, col = qcols[1], main =  "Few")
+res2 <- apply(cbind(pbeta2, palpha2, pgamma2), 1, curve.calc)
+matplot(res2, type = "l", lty = 1, col = qcols[2], main =  "Fewer than half")
+res3 <- apply(cbind(pbeta3, palpha3, pgamma3), 1, curve.calc)
+matplot(res3, type = "l", lty = 1, col = qcols[3], main =  "Many")
+res4 <- apply(cbind(pbeta4, palpha4, pgamma4), 1, curve.calc)
+matplot(res4, type = "l", lty = 1, col = qcols[4], main = "More than half")
+res5 <- apply(cbind(pbeta5, palpha5, pgamma5), 1, curve.calc)
+matplot(res5, type = "l", lty = 1, col = qcols[5], main =  "Most")
+
+```
+
+- Individual estimates of response curves. There is quite a bit of variability for *Many*, even more than for *Most*. Roughly speaking, the ordering is *Many*, *More than half*, *Most*. *Few* has the most shallow response curve.
+
+```{r, fig.asp=.7, fig.height=7}
+png("Quants_curves.png", width = 1700, height = 2000, res=300)
+layout(matrix(c(0, 1,1, 2,2, 0, 3,3,4,4,5,5), nrow = 2, byrow = T))
+par(mgp = c(2, .7, 0), mar = c(3,3,1,1))
+
+matplot(1:100, res1, type = "l", lty = 1, main = "Few", ylim = c(0,1), col = adjustcolor(1, .1)
+        , ylab = "Probability 'true' response", xlab = "Percent", frame.plot = F)
+abline(h = .5, col = adjustcolor(1, .5))
+abline(v = 50, col = adjustcolor(1, .5))
+lines(1:100, pps1, lwd = 3, col = qcols[1])
+
+matplot(1:100, res2, type = "l", lty = 1, main = "Fewer than half", ylim = c(0,1), col = adjustcolor(1, .1)
+        , ylab = "Probability 'true' response", xlab = "Percent", frame.plot = F)
+abline(h = .5, col = adjustcolor(1, .5))
+abline(v = 50, col = adjustcolor(1, .5))
+lines(1:100, pps2, lwd = 3, col = qcols[2])
+
+matplot(1:100, res3, type = "l", lty = 1, main = "Many", ylim = c(0,1), col = adjustcolor(1, .1)
+        , ylab = "Probability 'true' response", xlab = "Percent", frame.plot = F)
+abline(h = .5, col = adjustcolor(1, .5))
+abline(v = 50, col = adjustcolor(1, .5))
+lines(1:100, pps3, lwd = 3, col = qcols[3])
+
+matplot(1:100, res4, type = "l", lty = 1, main = "More than half", ylim = c(0,1), col = adjustcolor(1, .1)
+        , ylab = "Probability 'true' response", xlab = "Percent", frame.plot = F)
+abline(h = .5, col = adjustcolor(1, .5))
+abline(v = 50, col = adjustcolor(1, .5))
+lines(1:100, pps4, lwd = 3, col = qcols[4])
+
+matplot(1:100, res5, type = "l", lty = 1, main = "Most", ylim = c(0,1), col = adjustcolor(1, .1)
+        , ylab = "Probability 'true' response", xlab = "Percent", frame.plot = F)
+abline(h = .5, col = adjustcolor(1, .5))
+abline(v = 50, col = adjustcolor(1, .5))
+lines(1:100, pps5, lwd = 3, col = qcols[5])
+dev.off()
+```
+
+- Now for the thresholds.
+
+```{r calc-thresholds, fig.width=4, fig.asp=1}
+#SR modified 07.07.21.
+make.cor.plot <- function(mat, ...){
+  M <- cor(mat)
+  pval <- corr.test(mat, adjust = "bonferroni") #add for significance labels
+  corrplot(M, p.mat = pval$p, insig = 'label_sig', sig.level = c(0.001, 0.01, 0.05), pch.cex = 0.9, diag=FALSE, type = "upper", mar = c(0,0,1,0), ...)
+  return(pval)
+}
+
+(M1.1 <- cbind("few" = pbeta1, "fewer" = pbeta2, "many" = pbeta3, "more" = pbeta4, "most" = pbeta5))
+p_beta <- corr.test(M1.1, adjust =  "bonferroni") #to get p-values
+
+(M1 <- cor(cbind("few" = pbeta1, "fewer" = pbeta2, "many" = pbeta3, "more" = pbeta4, "most" = pbeta5)))
+png("Threshold_v2.png", width = 1200, height=1100, res=300)
+corrplot(M1, p.mat = p_beta$p, insig = 'label_sig', sig.level = c(0.001, 0.01, 0.05), type = "upper", title = "Threshold", mar = c(0,0,2,0),pch.cex = 0.9, diag=FALSE )
+dev.off
+
+#for table 1
+sds1 <- apply(cbind("few" = pbeta1, "fewer" = pbeta2, "many" = pbeta3, "more" = pbeta4, "most" = pbeta5), 2, sd)
+means1 <- apply(cbind("few" = pbeta1, "fewer" = pbeta2, "many" = pbeta3, "more" = pbeta4, "most" = pbeta5), 2, mean)
+
+(M2.1 <- cbind("few" = palpha1, "fewer" = palpha2, "many" = palpha3, "more" = palpha4, "most" = palpha5))
+p_alpha <- corr.test(M2.1, adjust =  "bonferroni") 
+(M2 <- cor(cbind("few" = palpha1, "fewer" = palpha2, "many" = palpha3, "more" = palpha4, "most" = palpha5)))
+png("Vagueness_v2.png", width = 1200, height=1200, res=300)
+corrplot(M2, p.mat = p_alpha$p, insig = 'label_sig', sig.level = c(0.001, 0.01, 0.05), type = "upper", title = "Vagueness", mar = c(0,0,2,0),pch.cex = 0.9, diag=FALSE )
+dev.off()
+
+sds2 <- apply(cbind("few" = palpha1, "fewer" = palpha2, "many" = palpha3, "more" = palpha4, "most" = palpha5), 2, sd)
+means2 <- apply(cbind("few" = palpha1, "fewer" = palpha2, "many" = palpha3, "more" = palpha4, "most" = palpha5), 2, mean)
+
+
+(M3.1 <- cbind("few" = pgamma1, "fewer" = pgamma2, "many" = pgamma3, "more" = pgamma4, "most" = pgamma5))
+p_gamma <- corr.test(M3.1, adjust = "bonferroni")
+(M3 <- cor(cbind("few" = pgamma1, "fewer" = pgamma2, "many" = pgamma3, "more" = pgamma4, "most" = pgamma5)))
+png("Response error_v2.png", width = 1200, height=1100, res=300)
+corrplot(M3, p.mat = p_gamma$p, insig = 'label_sig', sig.level = c(0.001, 0.01, 0.05), type = "upper", title = "Response error", mar = c(0,0,2,0), pch.cex = 0.9, diag=FALSE )
+dev.off()
+```
+
+```{r}
+#SR: modify 07.07.21
+png("All_quants_estimates_corr_v2.png", width = 2500, height=1700, res=300)
+layout(matrix(c(1,1,2,2,3,3,0,4,4,5,5,0), ncol = 6, byrow = T))
+
+make.cor.plot(cbind("Vague" = palpha1, "Thr." = pbeta1, "Error" = pgamma1), title = "Few")
+make.cor.plot(cbind("Vague" = palpha2, "Thr." = pbeta2, "Error" = pgamma2), title = "Fewer")
+make.cor.plot(cbind("Vague" = palpha3, "Thr." = pbeta3, "Error" = pgamma3), title = "Many")
+make.cor.plot(cbind("Vague" = palpha4, "Thr." = pbeta4, "Error" = pgamma4), title = "More")
+make.cor.plot(cbind("Vague" = palpha5, "Thr." = pbeta5, "Error" = pgamma5), title = "Most")
+dev.off()
+```
+
+```{r}
+#SR 24.09.21 -> to see influentian observations
+my_cols <- c("#00AFBB", "#FC4E07")
+outliers.comp <- function(mat, tit){
+  mat2 <- NULL
+  m1 <- lm(mat[,1]~mat[,2])
+  m2 <- lm(mat[,1]~mat[,3])
+  m3 <- lm(mat[,2]~mat[,3])
+  mat2 <- cbind(ols_plot_cooksd_bar(m1)$data$color,ols_plot_cooksd_bar(m2)$data$color,ols_plot_cooksd_bar(m3)$data$color)
+  mat2 <- as.data.frame(mat2)
+  out <-  ifelse(mat2=="outlier", 1, 0)
+  out <- as.data.frame(out)
+  out$out_sum <- out[,1]+out[,2]+out[,3]
+  out$out_fin <- as.factor(ifelse(out$out_sum==0,"normal","outlier"))
+  pairs(mat, lower.panel = NULL, pch = 19, col = my_cols[out$out_fin], main = tit)
+}
+ 
+png("Influential_corr_parameters_few.png", width = 2500, height=1700, res=300)
+outliers.comp(cbind("Vague" = palpha1, "Thr." = pbeta1, "Error" = pgamma1), "Few")
+dev.off()
+png("Influential_corr_parameters_fth.png", width = 2500, height=1700, res=300)
+outliers.comp(cbind("Vague" = palpha2, "Thr." = pbeta2, "Error" = pgamma2), "Fewer than half") #could be due to influential observ.
+dev.off()
+png("Influential_corr_parameters_many.png", width = 2500, height=1700, res=300)
+outliers.comp(cbind("Vague" = palpha3, "Thr." = pbeta3, "Error" = pgamma3), "Many")
+dev.off()
+png("Influential_corr_parameters_mth.png", width = 2500, height=1700, res=300)
+outliers.comp(cbind("Vague" = palpha4, "Thr." = pbeta4, "Error" = pgamma4), "More than half")
+dev.off()
+png("Influential_corr_parameters_most.png", width = 2500, height=1700, res=300)
+outliers.comp(cbind("Vague" = palpha5, "Thr." = pbeta5, "Error" = pgamma5), "Most")
+dev.off()
+```
+
+
+```{r}
+#SR: modify 23.09.21
+make.cor.plot(cbind("Vague" = palpha1, "Thr." = pbeta1, "Error" = pgamma1), title = "Few")
+
+m1 <- lm(palpha1~pbeta1)
+ols_plot_cooksd_bar(m1)
+ols_plot_resid_stud(m1)
+
+make.cor.plot(cbind("Vague" = palpha2, "Thr." = pbeta2, "Error" = pgamma2), title = "Fewer")
+
+m2 <- lm(pbeta2~pgamma2)
+ols_plot_cooksd_bar(m2)
+ols_plot_resid_stud(m2)
+#5,52,60
+
+palpha2_new <- palpha2[c(1:4,6:51,53:59,61:71)]
+pbeta2_new <- pbeta2[c(1:4,6:51,53:59,61:71)]
+pgamma2_new <- pgamma2[c(1:4,6:51,53:59,61:71)]
+
+plot(pgamma2, pbeta2)
+abline(lm(pbeta2~pgamma2))
+plot(pgamma2_new,pbeta2_new)
+abline(lm(pbeta2_new~pgamma2_new))
+
+make.cor.plot(cbind("Vague" = palpha2_new, "Thr." = pbeta2_new, "Error" = pgamma2_new), title = "Fewer")
+
+make.cor.plot(cbind("Vague" = palpha3, "Thr." = pbeta3, "Error" = pgamma3), title = "Many")
+
+m3.1 <- lm(pbeta3~palpha3)
+ols_plot_cooksd_bar(m3.1)
+ols_plot_resid_stud(m3.1)
+#26
+
+m3.2 <- lm(palpha3~pgamma3)
+ols_plot_cooksd_bar(m3.2)
+ols_plot_resid_stud(m3.2)
+#46
+
+palpha3_new <- palpha3[c(1:25,27:45,47:71)]
+pbeta3_new <- pbeta3[c(1:25,27:45,47:71)]
+pgamma3_new <- pgamma3[c(1:25,27:45,47:71)]
+
+plot(palpha3, pbeta3)
+abline(lm(pbeta3~palpha3))
+plot(palpha3_new,pbeta3_new)
+abline(lm(pbeta3_new~palpha3_new))
+
+plot(pgamma3, palpha3)
+abline(lm(palpha3~pgamma3))
+plot(pgamma3_new,palpha3_new)
+abline(lm(palpha3_new~pgamma3_new))
+
+make.cor.plot(cbind("Vague" = palpha3_new, "Thr." = pbeta3_new, "Error" = pgamma3_new), title = "Many")
+
+make.cor.plot(cbind("Vague" = palpha4, "Thr." = pbeta4, "Error" = pgamma4), title = "More")
+
+m4 <- lm(palpha4~pbeta4)
+ols_plot_cooksd_bar(m4)
+ols_plot_resid_stud(m4)
+#7
+palpha4_new <- palpha4[c(1:6,8:71)]
+pbeta4_new <- pbeta4[c(1:6,8:71)]
+pgamma4_new <- pgamma4[c(1:6,8:71)]
+
+plot(palpha4, pbeta4)
+abline(lm(pbeta4~palpha4))
+plot(palpha4_new,pbeta4_new)
+abline(lm(pbeta4_new~palpha4_new))
+
+make.cor.plot(cbind("Vague" = palpha4_new, "Thr." = pbeta4_new, "Error" = pgamma4_new), title = "More")
+
+
+make.cor.plot(cbind("Vague" = palpha5, "Thr." = pbeta5, "Error" = pgamma5), title = "Most")
+
+m5 <- lm(palpha5~pgamma5)
+ols_plot_cooksd_bar(m5)
+ols_plot_resid_stud(m5)
+
+
+```
+
+#### Comparing "More than half" and "Most"
+
+```{r thresholds-exp1, fig.asp=1.5}
+layout(matrix(c(1,2,3,3), ncol = 2, byrow = T), heights = c(.4, .6))
+
+plot(pbeta4 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "More than half", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+plot(pbeta5 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "Most", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+
+plot(pbeta4 * 100 + 50, pbeta5 * 100 + 50
+     , pch = 19, col = adjustcolor(1, .5)
+     , ylab = "Threshold for 'most'"
+     , xlab = "Threshold for 'more than half'"
+     , xlim = c(40, 65)
+     , ylim = c(40, 65)
+     )
+abline(0, 1, lwd = 1.5, col = "firebrick")
+```
+
+```{r CrIs, eval = T}
+mbeta4 <- pEst[,10 + 3 * I + 1:I]
+mbeta5 <- pEst[,10 + 4 * I + 1:I]
+mdiff <- mbeta4
+for(i in 1:ncol(mdiff)){
+  mdiff[,i] <- apply(cbind(mbeta4[,i], mbeta5[,i]), 1, function(x) x[2] - x[1])
+}
+pCIs <- apply(mdiff, 2, quantile, probs = c(.025, .975)) 
+pThresh <- apply(mdiff, 2, mean)
+```
+
+```{r, eval = T}
+indord <- order(pThresh)
+plotCI(1:I, pThresh[indord]
+       , li = pCIs[1, indord], ui = pCIs[2, indord]
+       , pch = 21, pt.bg = "slateblue"
+       , ylab = "Most - More than half"
+       , xlab = "Participant")
+abline(h = 0)
+```
+
+**Bayes factor assessing whether *More* is more than *More than half* for everyone.**
+
+```{r, eval = T}
+## Prior probability
+M <- 100000
+s2 <- rinvgamma(M, 2, .1)
+beta4 <- rnorm(M, 0, .1)
+
+prioreff <- exp(pnorm(0, beta4, sqrt(s2), lower.tail = T, log.p = T) * I)
+priorneg <- mean(prioreff)
+
+## Posterior Probability
+targ <- mdiff
+good <- targ < 0 #evaluate their sign
+all.good <- apply(good, 1, mean) #evaluate how often all theta estimates are postitive
+postneg <- mean(all.good == 1) #Posterior probability of all theta_i being positive
+
+# priorneg
+# postneg
+
+bfmomo <- postneg/priorneg
+```
+
+#### Comparing "More than half" and "Many"
+
+```{r thresholds-exp1-b, fig.asp=1.5}
+layout(matrix(c(1,2,3,3), ncol = 2, byrow = T), heights = c(.4, .6))
+
+plot(pbeta4 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "More than half", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+plot(pbeta3 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "Many", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+
+plot(pbeta4 * 100 + 50, pbeta3 * 100 + 50
+     , pch = 19, col = adjustcolor(1, .5)
+     , ylab = "Threshold for 'many'"
+     , xlab = "Threshold for 'more than half'"
+     , xlim = c(10, 60)
+     , ylim = c(10, 60)
+     )
+abline(0, 1, lwd = 1.5, col = "firebrick")
+```
+
+```{r CrIs-b, eval = T}
+mbeta4 <- pEst[,10 + 3 * I + 1:I]
+mbeta3 <- pEst[,10 + 2 * I + 1:I]
+mdiffmany <- mbeta4
+for(i in 1:ncol(mdiff)){
+  mdiffmany[,i] <- apply(cbind(mbeta3[,i], mbeta4[,i]), 1, function(x) x[2] - x[1])
+}
+pCIs <- apply(mdiffmany, 2, quantile, probs = c(.025, .975)) 
+pThresh <- apply(mdiffmany, 2, mean)
+```
+
+```{r, eval = T}
+indord <- order(pThresh)
+plotCI(1:I, pThresh[indord]
+       , li = pCIs[1, indord], ui = pCIs[2, indord]
+       , pch = 21, pt.bg = "slateblue"
+       , ylab = "More than half - Many"
+       , xlab = "Participant")
+abline(h = 0)
+```
+
+**Bayes factor assessing whether *Many* is less than *More than half* for everyone.**
+
+```{r, eval = T}
+## Prior probability
+M <- 100000
+s2 <- rinvgamma(M, 2, .1)
+beta3 <- rnorm(M, 0, .1)
+
+prioreff <- exp(pnorm(0, beta3, sqrt(s2), lower.tail = T, log.p = T) * I)
+priorneg <- mean(prioreff)
+
+## Posterior Probability
+targ <- mdiffmany
+good <- targ > 0 #evaluate their sign
+all.good <- apply(good, 1, mean) #evaluate how often all theta estimates are postitive
+postneg <- mean(all.good == 1) #Posterior probability of all theta_i being positive
+
+# priorneg
+postneg
+
+bfmamo <- postneg/priorneg
+```
+
+
+## Additional Analyses {.tabset .tabset-fade}
+
+### Clustering {.tabset .tabset-fade}
+
+As discussed in our meetings, we wanted to do a cluster analysis on the parameters from the probit model to assess whether there are distinct groups of individuals with certain parameter patterns. For example, we hypothesized that there might be a group of individuals who interpret the quantifier *Most* as *More than half* and therefore have a threshold close to 50% (or 0 in the current parameterization). Here, we do an extensive cluster analysis on 1. the parameters corresponding to the quantifier *Most*, 2. the parameters corresponding to the quantifier *Many*, and 3. an additional analysis on all parameter from all models.
+
+#### Cluster Analysis for Quantifier Most
+
+The threshold, vagueness and guessing parameters for all participants were submitted to the cluster analysis. A determination of the optimal number of clusters consistently favored $K = 2$ clusters.
+
+```{r, fig.cap="Determining the optimal number of clusters."}
+mostpars <- cbind(pbeta5, palpha5, pgamma5)
+
+layout(matrix(c(1,1,2,2,0,3,3,0), ncol = 4, byrow = T))
+fviz_nbclust(mostpars, kmeans, method = "wss")
+fviz_nbclust(mostpars, kmeans, method = "silhouette")
+gap_stat <- cluster::clusGap(mostpars, FUN = kmeans, nstart = 25,
+                    K.max = 10, B = 50)
+fviz_gap_stat(gap_stat)
+```
+
+The figure below shows the response curves based on the cluster centers as parameters. As can be seen there is a clear shift in threshold between the two clusters, one perfectly centered at 50%, and one much higher. This is consistent with our hypothesis that there might be some individuals who interpret *Most* as more than half, and others interpret it as more than more than half.
+
+```{r most-only}
+res.clust <- kmeans(x = mostpars, centers = 2, nstart = 20)
+
+curveclust <- apply(res.clust$centers, 1, curve.calc)
+matplot(curveclust, type = "l", lty = 1, lwd = 2, col = qcols[5], main =  "Most")
+abline(v = 50)
+```
+
+```{r}
+qcols <- brewer.pal(5, "Dark2")
+allpars <- cbind(pbeta1, palpha1, pgamma1
+                  , pbeta2, palpha2, pgamma2
+                  , pbeta3, palpha3, pgamma3
+                  , pbeta4, palpha4, pgamma4
+                  , pbeta5, palpha5, pgamma5)
+
+draw.ind.clust <- function(pars, cluster, cols = qcols, main = ""){
+  par(mgp = c(2, .7, 0), mar = c(3,3,1,1))
+  layout(matrix(c(1, 4, 2, 3), ncol = 2, byrow = T))
+  n <- length(unique(cluster))
+  plot(pars[, 1], pars[, 2], col = qcols[cluster]
+     , xlab = "Threshold", ylab = "Vagueness"
+     , pch = 19)
+  legend("topleft", legend = paste("Cluster", 1:n), fill = cols[1:n], bty = "n")
+  plot(pars[, 1], pars[, 3], col = qcols[cluster]
+     , xlab = "Threshold", ylab = "Reps. error"
+     , pch = 19)
+  legend("topleft", legend = paste("Cluster", 1:n), fill = cols[1:n], bty = "n")
+  plot(pars[, 2], pars[, 3], col = qcols[cluster]
+     , xlab = "Vagueness", ylab = "Reps. error"
+     , pch = 19)
+  legend("topleft", legend = paste("Cluster", 1:n), fill = cols[1:n], bty = "n")
+  plot(0,0,axes = F, col = "white", ylab = "", xlab = "")
+  text(0,0, main, cex = 4)
+}
+```
+
+Next, we investigated individual differences for all quantifiers based on the cluster analysis. The plots for the quantifier *Most* illustrate that the threshold is consistently and clear-cut associated with cluster affiliation. There are no additional consistencies for the other quantifiers based on this cluster analysis.
+
+```{r}
+draw.ind.clust(allpars[, 13:15], cluster = res.clust$cluster, main = "Most")
+draw.ind.clust(allpars[, 1:3], cluster = res.clust$cluster, main = "Few")
+draw.ind.clust(allpars[, 4:6], cluster = res.clust$cluster, main = "Fewer")
+draw.ind.clust(allpars[, 7:9], cluster = res.clust$cluster, main = "Many")
+draw.ind.clust(allpars[, 10:12], cluster = res.clust$cluster, main = "More")
+```
+
+#### Cluster Analysis for Quantifier Many
+
+The threshold, vagueness and guessing parameters for all participants were submitted to the cluster analysis. A determination of the optimal number of clusters was inconsistent with either $K = 1$ or $K = 2$ favored. We therefore ran a cluster analysis with $K = 2$ clusters.
+
+```{r, fig.cap="Determining the optimal number of clusters."}
+manypars <- cbind(pbeta3, palpha3, pgamma3)
+
+layout(matrix(c(1,1,2,2,0,3,3,0), ncol = 4, byrow = T))
+fviz_nbclust(manypars, kmeans, method = "wss")
+fviz_nbclust(manypars, kmeans, method = "silhouette")
+gap_stat <- cluster::clusGap(manypars, FUN = kmeans, nstart = 25,
+                    K.max = 10, B = 50)
+fviz_gap_stat(gap_stat)
+```
+
+The figure below shows the response curves based on the cluster centers as parameters. As can be seen there is a clear shift in threshold between the two clusters, one perfectly centered at 50%, and one much lower. This is consistent with our hypothesis that there might be some individuals who interpret *Many* as more than half, and others interpret it as less than more than half.
+
+```{r many-only}
+res.clust.many <- kmeans(x = manypars, centers = 2, nstart = 20)
+
+curveclust <- apply(res.clust.many$centers, 1, curve.calc)
+matplot(curveclust, type = "l", lty = 1, lwd = 2, col = qcols[5], main =  "Many")
+abline(v = 50)
+```
+
+Next, we investigated individual differences for all quantifiers based on the cluster analysis for quantifier *Many*. The plots for the quantifier *Many* illustrate that the threshold is consistently and clear-cut associated with cluster affiliation. In addition, individuals from cluster 1 --- the cluster with thresholds lower than 50% --- have the tendency for an increased vagueness parameter as well. This seems plausible: If the quantifier *Many* is interpreted as more than half, as seems to be the case for cluster 2, then there should be reduced vaguenuess associated with this quantifier. 
+
+In the second plot we assess whether the clustering on quantifier *Many* has a relationship with potential clustering for quantifier *Few* which is often thought of as the mirror quantifier of *Many*. However, the results are mostly inconsistent. There seems to be a small tendency that cluster 1 has a lower threshold on average than cluster 2, which seems plausible. However, this trend is mild at best. There are no other consistencies from this cluster analysis for the other quantifiers. Interestingly, the individuals who interpret *Many* as more than half do not seem to be the same individuals who interpret *Most* as more than half.
+
+```{r}
+draw.ind.clust(allpars[, 7:9], cluster = res.clust.many$cluster, main = "Many")
+draw.ind.clust(allpars[, 1:3], cluster = res.clust.many$cluster, main = "Few")
+draw.ind.clust(allpars[, 4:6], cluster = res.clust.many$cluster, main = "Fewer")
+draw.ind.clust(allpars[, 13:15], cluster = res.clust.many$cluster, main = "Most")
+draw.ind.clust(allpars[, 10:12], cluster = res.clust.many$cluster, main = "More")
+```
+
+```{r, fig.asp=1, fig.width=5}
+threshmost <- allpars[, 13]
+threshmany <- allpars[, 7]
+
+par(mgp = c(2, .7, 0), mar = c(3,3,1,1))
+  n <- 2
+  clustcols <- ifelse(res.clust$cluster == 1
+         , adjustcolor(qcols[res.clust.many$cluster], alpha.f = .4)
+         , adjustcolor(qcols[res.clust.many$cluster], alpha.f = 1))
+  plot(threshmost, threshmany
+       , col = clustcols
+     , xlab = "Threshold Most", ylab = "Threshold Many"
+     , pch = 19, cex = 1.5)
+  legend("bottomright", legend = paste0("Cluster [", c(1,1,2,2), ", ", c(1,2,1,2), "]")
+         , fill = ifelse(c(1,2,1,2) == 1
+                         , adjustcolor(qcols[c(1,1,2,2)], alpha.f = .4)
+                         , adjustcolor(qcols[c(1,1,2,2)], alpha.f = 1))
+         , bty = "n")
+```
+
+#### Cluster Analysis with Combining Many and Most
+
+The threshold, vagueness and guessing parameters for all participants for quantifiers *Most* and *Many* were submitted to the cluster analysis. A determination of the optimal number of clusters was inconsistent with either $K = 1$ or $K = 6$ favored. From a theoretical perspective given the two previous analyses we expected $K = 4$ clusters, and therefore picked this number.
+
+```{r, fig.cap="Determining the optimal number of clusters."}
+combpars <- cbind(allpars[, 7:9], allpars[, 13:15])
+
+layout(matrix(c(1,1,2,2,0,3,3,0), ncol = 4, byrow = T))
+fviz_nbclust(combpars, kmeans, method = "wss")
+fviz_nbclust(combpars, kmeans, method = "silhouette")
+gap_stat <- cluster::clusGap(combpars, FUN = kmeans, nstart = 25,
+                    K.max = 10, B = 50)
+fviz_gap_stat(gap_stat)
+```
+
+The figure below shows the response curves for *Many* and *Most* based on the cluster centers as parameters. As can be seen there is a clear shift in threshold between the four clusters for *Many*, and between most of the clusters for *Most*. It almost seems like the 50%cluster for *Many* breaks down more, but the 50% cluster for *Most* is quite consistent.
+
+```{r many-most, fig.asp=.4}
+res.clust.comb <- kmeans(x = combpars, centers = 4, nstart = 20)
+
+layout(matrix(1:2, ncol = 2))
+par(mgp = c(2, .7, 0), mar = c(3,3,1,1))
+
+curveclust <- apply(res.clust.comb$centers[, 1:3], 1, curve.calc)
+matplot(curveclust, type = "l", lty = 1, lwd = 2, col = qcols[5], main =  "Many")
+abline(v = 50)
+
+curveclust <- apply(res.clust.comb$centers[, 4:6], 1, curve.calc)
+matplot(curveclust, type = "l", lty = 1, lwd = 2, col = qcols[5], main =  "Most")
+abline(v = 50)
+```
+
+```{r, fig.asp=1, fig.width=5}
+threshmost <- allpars[, 13]
+threshmany <- allpars[, 7]
+
+par(mgp = c(2, .7, 0), mar = c(3,3,1,1))
+  n <- 2
+  plot(threshmost, threshmany
+       , col = qcols[res.clust.comb$cluster]
+     , xlab = "Threshold Most", ylab = "Threshold Many"
+     , pch = 19, cex = 1.5)
+  legend("bottomright", legend = paste("Cluster", 1:4)
+         , fill = qcols[1:4]
+         , bty = "n")
+```
+
+#### Cluster Analysis with all parameters $K = 4$
+
+```{r n-clust}
+fviz_nbclust(allpars, kmeans, method = "wss")
+fviz_nbclust(allpars, kmeans, method = "silhouette")
+gap_stat <- cluster::clusGap(allpars, FUN = kmeans, nstart = 25,
+                    K.max = 10, B = 50)
+fviz_gap_stat(gap_stat)
+```
+
+
+```{r clust-all}
+res.clust.all <- kmeans(x = allpars, centers = 4, nstart = 25)
+
+curveclust.few <- apply(res.clust.all$centers[, 1:3], 1, curve.calc)
+curveclust.fewer <- apply(res.clust.all$centers[, 4:6], 1, curve.calc)
+curveclust.many <- apply(res.clust.all$centers[, 7:9], 1, curve.calc)
+curveclust.more <- apply(res.clust.all$centers[, 10:12], 1, curve.calc)
+curveclust.most <- apply(res.clust.all$centers[, 13:15], 1, curve.calc)
+matplot(curveclust.most, type = "l", lty = 1, lwd = 2, col = c(qcols[5], adjustcolor(qcols[5], alpha.f = .5)))
+matplot(curveclust.few, type = "l", lty = 1, lwd = 2, col = c(qcols[1], adjustcolor(qcols[1], alpha.f = .5)), add = T)
+matplot(curveclust.fewer, type = "l", lty = 1, lwd = 2, col = c(qcols[2], adjustcolor(qcols[2], alpha.f = .5)), add = T)
+matplot(curveclust.many, type = "l", lty = 1, lwd = 2, col = c(qcols[3], adjustcolor(qcols[3], alpha.f = .5)), add = T)
+matplot(curveclust.more, type = "l", lty = 1, lwd = 2, col = c(qcols[4], adjustcolor(qcols[4], alpha.f = .5)), add = T)
+abline(v = 50)
+```
+
+Looking at individual differences for all quantifiers based on cluster analysis with all quantifiers
+
+```{r clust-ind}
+draw.ind.clust(allpars[, 1:3], cluster = res.clust.all$cluster, main = "Few")
+draw.ind.clust(allpars[, 4:6], cluster = res.clust.all$cluster, main = "Fewer")
+draw.ind.clust(allpars[, 7:9], cluster = res.clust.all$cluster, main = "Many")
+draw.ind.clust(allpars[, 10:12], cluster = res.clust.all$cluster, main = "More")
+draw.ind.clust(allpars[, 13:15], cluster = res.clust.all$cluster, main = "Most")
+```
+
+#### Cluster Analysis with all parameters K = 2
+
+```{r clust-all-5-3}
+res.clust.all <- kmeans(x = allpars, centers = 2, nstart = 25)
+
+curveclust.few <- apply(res.clust.all$centers[, 1:3], 1, curve.calc)
+curveclust.fewer <- apply(res.clust.all$centers[, 4:6], 1, curve.calc)
+curveclust.many <- apply(res.clust.all$centers[, 7:9], 1, curve.calc)
+curveclust.more <- apply(res.clust.all$centers[, 10:12], 1, curve.calc)
+curveclust.most <- apply(res.clust.all$centers[, 13:15], 1, curve.calc)
+matplot(curveclust.most, type = "l", lty = 1, lwd = 2, col = c(qcols[5], adjustcolor(qcols[5], alpha.f = .5)))
+matplot(curveclust.few, type = "l", lty = 1, lwd = 2, col = c(qcols[1], adjustcolor(qcols[1], alpha.f = .5)), add = T)
+matplot(curveclust.fewer, type = "l", lty = 1, lwd = 2, col = c(qcols[2], adjustcolor(qcols[2], alpha.f = .5)), add = T)
+matplot(curveclust.many, type = "l", lty = 1, lwd = 2, col = c(qcols[3], adjustcolor(qcols[3], alpha.f = .5)), add = T)
+matplot(curveclust.more, type = "l", lty = 1, lwd = 2, col = c(qcols[4], adjustcolor(qcols[4], alpha.f = .5)), add = T)
+abline(v = 50)
+```
+
+Looking at individual differences for all quantifiers based on cluster analysis with all quantifiers
+
+```{r clust-ind-5}
+draw.ind.clust(allpars[, 1:3], cluster = res.clust.all$cluster, main = "Few")
+draw.ind.clust(allpars[, 4:6], cluster = res.clust.all$cluster, main = "Fewer")
+draw.ind.clust(allpars[, 7:9], cluster = res.clust.all$cluster, main = "Many")
+draw.ind.clust(allpars[, 10:12], cluster = res.clust.all$cluster, main = "More")
+draw.ind.clust(allpars[, 13:15], cluster = res.clust.all$cluster, main = "Most")
+```
+
+
+#### SR: Cluster Analysis with all quantifiers, threshold, vagueness K = 4
+
+```{r clust-all-5-2}
+#SR 21.07.20 standarazed varibel -> no need as they are on the same scale within parameter
+#SR run lines 771
+
+thr_vag_pars <- cbind(palpha1,  
+                  palpha2,
+                  palpha3, 
+                  palpha4,
+                  palpha5)
+
+thr_vag_pars <- cbind(pgamma1,  
+                  pgamma2,
+                  pgamma3, 
+                  pgamma4,
+                  pgamma5)
+
+thr_vag_pars <- cbind(pbeta1,  
+                  pbeta2,
+                  pbeta3, 
+                  pbeta4,
+                  pbeta5)
+
+#thr_vag_pars <- scale(thr_vag_pars) #SR do we need this
+#select number of clusters
+fviz_nbclust(thr_vag_pars, kmeans, method = "wss")
+fviz_nbclust(thr_vag_pars, kmeans, method = "silhouette") 
+gap_stat <- cluster::clusGap(thr_vag_pars, FUN = kmeans, nstart = 25,
+                    K.max = 10, B = 50)
+fviz_gap_stat(gap_stat) #SR: the gap stst is a bit useless becaue it shows that 1 is optimum.
+#run k-means
+res.clust.thr_vag_pars <- kmeans(x = thr_vag_pars, centers = 3, nstart = 25)
+
+#recode for ploting for thresholds
+clus <- ifelse(res.clust.thr_vag_pars$cluster == 1,2,ifelse(res.clust.thr_vag_pars$cluster== 2,1,3))
+
+aggregate(thr_vag_pars, by=list(cluster=res.clust.thr_vag_pars$cluster), mean) #what are the mean estimates in the clusture
+table(res.clust.thr_vag_pars$cluster) #how many participants in each clusture
+table(res.clust.thr_vag_pars$cluster, clus)
+
+
+
+draw.ind.clust(allpars[, 1:3], cluster = res.clust.thr_vag_pars$cluster, main = "Few")
+draw.ind.clust(allpars[, 4:6], cluster = res.clust.thr_vag_pars$cluster, main = "Fewer")
+draw.ind.clust(allpars[, 7:9], cluster = res.clust.thr_vag_pars$cluster, main = "Many")
+draw.ind.clust(allpars[, 10:12], cluster = res.clust.thr_vag_pars$cluster, main = "More")
+draw.ind.clust(allpars[, 13:15], cluster = res.clust.thr_vag_pars$cluster, main = "Most")
+
+
+draw.ind.clust(allpars[, 1:3], cluster = clus, main = "Few")
+draw.ind.clust(allpars[, 7:9], cluster = clus, main = "Many")
+draw.ind.clust(allpars[, 13:15], cluster = clus, main = "Most")
+#save plot
+png("few_cl_based_threshold.png", res = 300, width = 2000, height = 2000)
+draw.ind.clust(allpars[, 1:3], cluster = clus, main = "Few")
+dev.off()
+#SR: check other paramteres in cluster
+#make dataset
+participant = c(1:71)
+clus_vec <- res.clust.thr_vag_pars$cluster
+data_cl <- as.data.frame(cbind(palpha1,palpha2, palpha3, palpha4, palpha5,pbeta1, pbeta2, pbeta3, pbeta4, pbeta5, pgamma1,pgamma2, pgamma3, pgamma4, pgamma5,participant,clus_vec))
+aggregate(data_cl[,1:5], by=list(cluster=data_cl$clus_vec), mean)
+data_cl1 <- subset.data.frame(data_cl, data_cl$clus_vec==2)
+corr.test(data_cl1[,1:5], adjust =  "bonferroni") 
+```
+
+
+###SR: LDA
+
+
+```{r LDA}
+#SR: modify 27.09.21
+#run res.clust.thr_vag_pars to get clusture analysis output
+#split to training and test data
+set.seed(123)
+ind <- sample(2, length(palpha1),
+              replace = TRUE,
+              prob = c(0.75, 0.25))
+table(ind)
+
+participant = c(1:71)
+
+#GAMMA
+#add clustures
+clus_vec <- res.clust.thr_vag_pars$cluster
+#make dataset
+data <- as.data.frame(cbind(palpha1,palpha2, palpha3, palpha4, palpha5,pbeta1, pbeta2, pbeta3, pbeta4, pbeta5, pgamma1,pgamma2, pgamma3, pgamma4, pgamma5,participant,clus_vec))
+
+
+colnames(data)
+#make cetegories, not numbers
+unique(data$clus_vec)
+data$cat <- ifelse(data$clus_vec==1, "A", "B")
+data$cat <- as.factor(data$cat)
+levels(data$cat)
+table(data$clus_vec, data$cat)
+
+
+#check withich variable are predictive
+formulaAll=cat~pgamma1 + pgamma2 + pgamma3 + pgamma4 + pgamma5
+gw_obj <- greedy.wilks(formulaAll,data=data, niveau = 0.1) 
+gw_obj$results$p.value.overall
+gw_res <- gw_obj$results
+#only pgamma1 and pgamma2
+
+#plot 
+png("Clusters_resp_error_lda.png", res = 200, width = 1000, height = 1000)
+plot(data[,c(11:12)], col = data$clus_vec, xlab = "Few resp. error", ylab = "Fewer resp. error")
+  legend(0.17, 0.08, legend=c("Cluster 1", "Cluster 2"),
+       col=c("red", "black"), lty=1, cex=0.8)
+dev.off()
+
+#split to training and testing -> SR mod. not use, try LOOCV
+training <- data[ind==1,]
+test <- data[ind==2,]
+
+#LDA assumptions
+#normality (for threshld can't really test on trianing data this assumption)
+qqnorm(data$pgamma1[which(data$clus_vec==2)]); qqline(data$pgamma1[which(data$clus_vec==2)])
+qqnorm(data$pgamma2[which(data$clus_vec==2)]); qqline(data$pgamma2[which(data$clus_vec==2)])
+
+
+#run LDA on training data
+##LDA assumptions: normality and same variance
+#for gamma contributes only pgamma1 and pgamma2
+linear <- lda(cat~pgamma1+pgamma2, training)
+linear
+
+#look at predictions
+p1 <- predict(linear, training)$class
+tab <- table(Predicted = p1, Actual = training$cat)
+tab
+sum(diag(tab))/sum(tab)
+#test data
+p2 <- predict(linear, test)$class
+tab1 <- table(Predicted = p2, Actual = test$cat)
+tab1
+sum(diag(tab1))/sum(tab1)
+
+#LOO corss validation
+lds_befcv <- lda(cat~pgamma1+pgamma2, data, CV = FALSE)
+p3 <- predict(lds_befcv, data)$class
+tab3 <- table(Predicted = p3, Actual = data$cat)
+tab3
+sum(diag(tab3))/sum(tab3)
+lds_cv <- lda(cat~pgamma1+pgamma2, data, CV = TRUE)
+tab4 <- table(data$cat, lds_cv$class, dnn = c('Actual Group','Predicted Group'))
+sum(diag(tab4))/sum(tab4)
+
+
+
+#BETA
+clus_vec <- res.clust.thr_vag_pars$cluster
+#make dataset
+data <- as.data.frame(cbind(palpha1,palpha2, palpha3, palpha4, palpha5,pbeta1, pbeta2, pbeta3, pbeta4, pbeta5, pgamma1,pgamma2, pgamma3, pgamma4, pgamma5,participant,clus_vec))
+
+#make cetegories, not numbers
+unique(data$clus_vec)
+data$cat <- ifelse(data$clus_vec==1, "A", ifelse(data$clus_vec==2, "B", "C"))
+data$cat <- as.factor(data$cat)
+levels(data$cat)
+table(data$clus_vec, data$cat)
+
+#chekc withich variable are predictive
+formulaAll=cat~pbeta1 + pbeta2 + pbeta3 + pbeta4 + pbeta5
+gw_obj <- greedy.wilks(formulaAll,data=data, niveau = 0.1) 
+gw_obj$results$p.value.overall
+gw_res <- gw_obj$results
+#only pbeta1, pbeta3, pbeta5
+#plot 
+colnames(data)
+plot(data[,c(6,8,10)], col = data$cat, lower.panel = NULL)
+
+png("Clusters_threshold_lda.png", res = 200, width = 1200, height = 1000)
+plot(data[,c(6,8,10)], col = data$cat, labels = c("Few threshold", "Many threshold", "Most threshold"), lower.panel = NULL)
+  legend("bottomleft", inset=c(0.13,0.15), legend=c("Cluster 1", "Cluster 2", "Cluster 3"),
+       col=c("red", "green", "black"), lty=1, cex=0.8, xpd = TRUE)
+dev.off()
+
+#split to training and testing -> SR mod. not use, try LOOCV
+#training <- data[ind==1,]
+#test <- data[ind==2,]
+
+#Assumptions
+qqnorm(data$pbeta1[which(data$clus_vec==3)]); qqline(data$pbeta1[which(data$clus_vec==3)])
+qqnorm(data$pbeta3[which(data$clus_vec==3)]); qqline(data$pbeta3[which(data$clus_vec==3)])
+qqnorm(data$pbeta5[which(data$clus_vec==3)]); qqline(data$pbeta5[which(data$clus_vec==3)]) 
+
+
+#LOO corss validation
+lds_befcv <- lda(cat~pbeta1 + pbeta3 + pbeta5, data, CV = FALSE)
+p3 <- predict(lds_befcv, data)$class
+tab3 <- table(Predicted = p3, Actual = data$cat)
+tab3
+sum(diag(tab3))/sum(tab3)
+lds_cv <- lda(cat~pbeta1 + pbeta3 + pbeta5, data, CV = TRUE)
+tab4 <- table(data$cat, lds_cv$class, dnn = c('Actual Group','Predicted Group'))
+sum(diag(tab4))/sum(tab4)
+
+
+#ALPHA
+#add clustures
+clus_vec <- res.clust.thr_vag_pars$cluster
+#make dataset
+data <- as.data.frame(cbind(palpha1,palpha2, palpha3, palpha4, palpha5,pbeta1, pbeta2, pbeta3, pbeta4, pbeta5, pgamma1,pgamma2, pgamma3, pgamma4, pgamma5,participant,clus_vec))
+
+
+
+#make cetegories, not numbers
+unique(data$clus_vec)
+data$cat <- ifelse(data$clus_vec==1, "A", "B")
+data$cat <- as.factor(data$cat)
+levels(data$cat)
+table(data$clus_vec, data$cat)
+
+
+#check withich variable are predictive
+# formulaAll=cat~palpha1 + palpha2 + palpha3 + palpha4 + palpha5
+# gw_obj <- greedy.wilks(formulaAll,data=data, niveau = 0.1) 
+# gw_obj$results$p.value.overall
+# gw_res <- gw_obj$results
+#for vaguness contributes palpha3
+
+
+#plot 
+colnames(data)
+png("Clusters_vagueness_lda.png", res = 200, width = 1200, height = 1000)
+plot(data[,3], col = data$clus_vec, xlab = "Participant", ylab = "Many vagueness")
+  legend(55, 0.0285, legend=c("Cluster 1", "Cluster 2"),
+       col=c("black", "red"), lty=1, cex=0.8)
+dev.off()
+
+
+#split to training and testing -> SR mod. not use, try LOOCV
+#training <- data[ind==1,]
+#test <- data[ind==2,]
+
+#normality assumption
+qqnorm(data$palpha3[which(data$clus_vec==2)]); qqline(data$palpha3[which(data$clus_vec==2)])
+qqnorm(data$palpha3[which(data$clus_vec==1)]); qqline(data$palpha3[which(data$clus_vec==1)])
+
+#variance
+ggplot(training,  aes(x = clus_vec, y = palpha3, group = clus_vec,col = clus_vec)) + 
+    geom_boxplot(alpha = 0.2) + 
+    theme(legend.position = "none") 
+
+#LOO corss validation
+lds_befcv <- lda(cat~palpha3, data, CV = FALSE)
+p3 <- predict(lds_befcv, data)$class
+tab3 <- table(Predicted = p3, Actual = data$cat)
+tab3
+sum(diag(tab3))/sum(tab3)
+lds_cv <- lda(cat~palpha3, data, CV = TRUE)
+tab4 <- table(data$cat, lds_cv$class, dnn = c('Actual Group','Predicted Group'))
+sum(diag(tab4))/sum(tab4)
+
+```
+
+```{r}
+#SR: 27.09.21
+#recalculate the mean thresholds
+cperc <- (dat$percent - 50) / 100
+thr_per <- function(threshold){
+   threshold*100 + 50
+}
+thr_per(0.014)
+```
+
+#### Comparing "Most" and "Many"
+
+```{r thresholds-exp1-3, fig.asp=1.5}
+layout(matrix(c(1,2,3,3), ncol = 2, byrow = T), heights = c(.4, .6))
+
+plot(pbeta3 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "Many", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+plot(pbeta5 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "Most", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+
+plot(pbeta3 * 100 + 50, pbeta5 * 100 + 50
+     , pch = 19, col = adjustcolor(1, .5)
+     , ylab = "Threshold for 'most'"
+     , xlab = "Threshold for 'many'"
+     , xlim = c(40, 65)
+     , ylim = c(40, 65)
+     )
+abline(0, 1, lwd = 1.5, col = "firebrick")
+```
+
+```{r CrIs-3, eval = T}
+mbeta3 <- pEst[,10 + 2 * I + 1:I]
+for(i in 1:ncol(mdiff)){
+  mdiff[,i] <- apply(cbind(mbeta5[,i], mbeta3[,i]), 1, function(x) x[2] - x[1])
+}
+pCIs <- apply(mdiff, 2, quantile, probs = c(.025, .975)) 
+pThresh <- apply(mdiff, 2, mean)
+```
+
+```{r, eval = T}
+png("manymosteffects.png", res = 200, width = 1200, height = 800)
+par(mar = c(3.3,3.3,.5,.5), mgp = c(2.2, .6, 0), las = 1)
+#recode for plotting for thresholds
+clus.n <- ifelse(res.clust.thr_vag_pars$cluster == 1,3,ifelse(res.clust.thr_vag_pars$cluster== 2,1,2))
+
+indord <- order(pThresh)
+plotCI(1:I, pThresh[indord]
+       , li = pCIs[1, indord], ui = pCIs[2, indord]
+       , pch = 21, pt.bg = qcols[clus.n[indord]]
+       , ylab = "Many - Most"
+       , xlab = "Participant"
+       , frame.plot = F)
+legend("topleft", fill = qcols,bty = "n"
+       , legend = paste("Cluster", 1:3))
+abline(h = 0)
+
+dev.off()
+```
+
+#### Comparing "Many" and "Few"
+
+```{r thresholds-exp1-3, fig.asp=1.5}
+layout(matrix(c(1,2,3,3), ncol = 2, byrow = T), heights = c(.4, .6))
+
+plot(pbeta1 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "Few", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+plot(pbeta3 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "Many", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+
+plot(pbeta1 * 100 + 50, pbeta3 * 100 + 50
+     , pch = 19, col = adjustcolor(1, .5)
+     , ylab = "Threshold for 'many'"
+     , xlab = "Threshold for 'few'"
+     , xlim = c(40, 65)
+     , ylim = c(40, 65)
+     )
+abline(0, 1, lwd = 1.5, col = "firebrick")
+```
+
+```{r CrIs-3, eval = T}
+mbeta1 <- pEst[,10 + 1:I]
+mbeta3 <- pEst[,10 + 2 * I + 1:I]
+
+for(i in 1:ncol(mdiff)){
+  mdiff[,i] <- apply(cbind(mbeta1[,i], mbeta3[,i]), 1, function(x) x[2] - x[1])
+}
+pCIs <- apply(mdiff, 2, quantile, probs = c(.025, .975)) 
+pThresh <- apply(mdiff, 2, mean)
+```
+
+```{r, eval = T}
+png("manyfeweffects.png", res = 200, width = 1200, height = 800)
+par(mar = c(3.3,3.3,.5,.5), mgp = c(2.2, .6, 0), las = 1)
+#recode for plotting for thresholds
+clus.n <- ifelse(res.clust.thr_vag_pars$cluster == 1,3,ifelse(res.clust.thr_vag_pars$cluster== 2,1,2))
+
+indord <- order(pThresh)
+plotCI(1:I, pThresh[indord]
+       , li = pCIs[1, indord], ui = pCIs[2, indord]
+       , pch = 21, pt.bg = qcols[clus.n[indord]]
+       , ylab = "Many - Few"
+       , xlab = "Participant"
+       , frame.plot = F)
+legend("topleft", fill = qcols,bty = "n"
+       , legend = paste("Cluster", 1:3))
+abline(h = 0)
+
+dev.off()
+```
+
+#### Comparing "Many" and "Fewer than half"
+
+```{r thresholds-exp1-3, fig.asp=1.5}
+layout(matrix(c(1,2,3,3), ncol = 2, byrow = T), heights = c(.4, .6))
+
+plot(pbeta2 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "Fewer than half", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+plot(pbeta3 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "Many", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+
+plot(pbeta2 * 100 + 50, pbeta3 * 100 + 50
+     , pch = 19, col = adjustcolor(1, .5)
+     , ylab = "Threshold for 'many'"
+     , xlab = "Threshold for 'fewer than half'"
+     , xlim = c(40, 65)
+     , ylim = c(40, 65)
+     )
+abline(0, 1, lwd = 1.5, col = "firebrick")
+```
+
+```{r CrIs-3, eval = T}
+mbeta2 <- pEst[,10 + I + 1:I]
+mbeta3 <- pEst[,10 + 2 * I + 1:I]
+
+for(i in 1:ncol(mdiff)){
+  mdiff[,i] <- apply(cbind(mbeta2[,i], mbeta3[,i]), 1, function(x) x[2] - x[1])
+}
+pCIs <- apply(mdiff, 2, quantile, probs = c(.025, .975)) 
+pThresh <- apply(mdiff, 2, mean)
+```
+
+```{r, eval = T}
+png("manyfewereffects.png", res = 200, width = 1200, height = 800)
+par(mar = c(3.3,3.3,.5,.5), mgp = c(2.2, .6, 0), las = 1)
+#recode for plotting for thresholds
+clus.n <- ifelse(res.clust.thr_vag_pars$cluster == 1,3,ifelse(res.clust.thr_vag_pars$cluster== 2,1,2))
+
+indord <- order(pThresh)
+plotCI(1:I, pThresh[indord]
+       , li = pCIs[1, indord], ui = pCIs[2, indord]
+       , pch = 21, pt.bg = qcols[clus.n[indord]]
+       , ylab = "Many - Fewer than half"
+       , xlab = "Participant"
+       , frame.plot = F)
+legend("topleft", fill = qcols,bty = "n"
+       , legend = paste("Cluster", 1:3))
+abline(h = 0)
+
+dev.off()
+```
+
+#### Comparing "Many" and "Fewer than half"
+
+```{r thresholds-exp1-3, fig.asp=1.5}
+layout(matrix(c(1,2,3,3), ncol = 2, byrow = T), heights = c(.4, .6))
+
+plot(pbeta4 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "More than half", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+plot(pbeta3 * 100 + 50, pch = 19, col = adjustcolor(1, .5), main = "Many", ylim = c(0, 100))
+abline(h = 50, lwd = 1.5, col = "firebrick")
+
+plot(pbeta4 * 100 + 50, pbeta3 * 100 + 50
+     , pch = 19, col = adjustcolor(1, .5)
+     , ylab = "Threshold for 'many'"
+     , xlab = "Threshold for 'more than half'"
+     , xlim = c(40, 65)
+     , ylim = c(20, 65)
+     )
+abline(0, 1, lwd = 1.5, col = "firebrick")
+```
+
+```{r CrIs-3, eval = T}
+mbeta4 <- pEst[,10 + 3 * I + 1:I]
+mbeta3 <- pEst[,10 + 2 * I + 1:I]
+
+for(i in 1:ncol(mdiff)){
+  mdiff[,i] <- apply(cbind(mbeta4[,i], mbeta3[,i]), 1, function(x) x[2] - x[1])
+}
+pCIs <- apply(mdiff, 2, quantile, probs = c(.025, .975)) 
+pThresh <- apply(mdiff, 2, mean)
+```
+
+```{r, eval = T}
+png("manymoreeffects.png", res = 200, width = 1200, height = 800)
+par(mar = c(3.3,3.3,.5,.5), mgp = c(2.2, .6, 0), las = 1)
+#recode for plotting for thresholds
+clus.n <- ifelse(res.clust.thr_vag_pars$cluster == 1,3,ifelse(res.clust.thr_vag_pars$cluster== 2,1,2))
+
+indord <- order(pThresh)
+plotCI(1:I, pThresh[indord]
+       , li = pCIs[1, indord], ui = pCIs[2, indord]
+       , pch = 21, pt.bg = qcols[clus.n[indord]]
+       , ylab = "Many - More than half"
+       , xlab = "Participant"
+       , frame.plot = F)
+legend("topleft", fill = qcols,bty = "n"
+       , legend = paste("Cluster", 1:3))
+abline(h = 0)
+
+dev.off()
+```
+
+### Simulation
+
+**Notes Julia:** I wouldn't call it a proper simulation study in the paper. It is more an exploration of data patterns that are expected if certain parameters are manipulated. The ones we are interested here are response noise/errors, which means after the perceived stimulus is compared to the threshold and a decision is made, there are additional processes that result in erroneous responding for some trials. Importantly, this **response error should be independent of the item.** The second parameter we are interested in is **vagueness which is variability in the perceived threshold on any item.** Vagueness, other than response error, adds noise in the decision process---it makes the threshold shift somewhat with every decision. The figure (the last one in this section) highlights the distinguishable effect of these two parameters on responses. Of course, the response patterns shown here are idealized, and we cannot expect any person's responses to look exactly like this. But it provides concrete hypotheses on data patterns that arise if both forms of variability are in the data.
+
+
+Simple rule-based responding by setting a fixed boundary. The lines represent different levels of perceptual noise. Where this source of noise would come from in our experiment is completely unclear to me. 
+
+```{r sim-fun-rule}
+## One response
+resp <- function(p) rbinom(length(p), 1, p)
+
+## Curve simulation
+sim.curve.rule <- function(boundary, perc.noise){
+  x <- seq(0, 1, .01)
+  xmat <- matrix(rep(x, 10000), nrow = length(x))
+  res <- apply(xmat, 1, rule.resp, noise = perc.noise, boundary = boundary)
+  return(colMeans(res))
+}
+
+## Response rules
+
+## Deliberate rule-based respongind is perfect responding
+rule.resp <- function(x, boundary, noise = 0){
+  x.perc <- rnorm(length(x), x, noise)
+  p <- ifelse(x.perc > boundary, 1, 0)
+  resp(p)
+}
+
+plot(sim.curve.rule(0.5, 0), type = "l", lwd = 2, col = "darkgray", ylab = "Prop true responses", xlab = "Percent")
+lines(sim.curve.rule(0.5, 0.01), col = "slateblue", lwd = 2) # 1% perceptual noise
+lines(sim.curve.rule(0.5, 0.05), col = "firebrick", lwd = 2) # 5% perceptual noise
+```
+
+**Negation** adds error/noise to the probability of responding correctly. This can either be uniform (makes most sense to me) or a function of the distance from the boundary.
+
+```{r sim-fun-neg}
+## One response
+resp <- function(p) rbinom(length(p), 1, p)
+
+## Curve simulation
+sim.curve.neg <- function(boundary, perc.noise, neg.noise, neg){
+  x <- seq(0, 1, .01)
+  xmat <- matrix(rep(x, 10000), nrow = length(x))
+  res <- apply(xmat, 1, rule.resp.neg
+               , noise = perc.noise
+               , boundary = boundary
+               , neg.noise = neg.noise
+               , neg = neg)
+  return(colMeans(res))
+}
+
+## Response rules
+
+## Deliberate rule-based respongind is perfect responding
+rule.resp.neg <- function(x, boundary, noise = 0, neg.noise = 0.05, neg = T){
+  x.perc <- rnorm(length(x), x, noise)
+  p <- ifelse(x.perc > boundary, 1, 0)
+  if(neg == T){
+    p.noise <- rnorm(length(p), p, neg.noise)
+    p <- ifelse(p.noise>1, 1, ifelse(p.noise<0, 0, p.noise))
+  }
+  resp(p)
+}
+
+plot(sim.curve.neg(0.5, 0.01, 0, F), type = "l", lwd = 2, col = "darkgray", ylab = "Prop true responses", xlab = "Percent")
+lines(sim.curve.neg(0.5, 0.01, .1, T), col = "slateblue", lwd = 2) # 1% perceptual noise
+legend("bottomright", legend = c("More than half", "Fewer than half"), fill = c("darkgray", "slateblue"), bty = "n")
+```
+
+I had a bit of an issue finding a good way of adding noise as a function of distance from boundary. Have to play a bit more.
+
+```{r sim-fun-neg-II, cache = T}
+## One response
+resp <- function(p) rbinom(length(p), 1, p)
+
+## Curve simulation
+sim.curve.neg <- function(boundary, perc.noise, neg.noise, neg){
+  x <- seq(0, 1, .01)
+  xmat <- matrix(rep(x, 100000), nrow = length(x))
+  res <- apply(xmat, 1, rule.resp.neg
+               , noise = perc.noise
+               , boundary = boundary
+               , neg.noise = neg.noise
+               , neg = neg)
+  return(colMeans(res))
+}
+
+## Response rules
+
+## Deliberate rule-based respongind is perfect responding
+rule.resp.neg <- function(x, boundary, noise = 0, neg.noise = 0.2, neg = T){
+  x.perc <- rnorm(length(x), x, noise)
+  p <- ifelse(x.perc > boundary, 1, 0)
+  z.noise <- dnorm(qnorm(x), sd = neg.noise) * neg.noise
+  dir.noise <- sample(c(-1, 1), size = length(x), replace = T)
+  if(neg == T){
+    p.noise <- p + z.noise * dir.noise
+    p <- ifelse(p.noise>1, 1, ifelse(p.noise<0, 0, p.noise))
+  }
+  resp(p)
+}
+
+plot(sim.curve.neg(0.5, 0.01, 0, F), type = "l", lwd = 2, col = "darkgray", ylab = "Prop true responses", xlab = "Percent")
+lines(sim.curve.neg(0.5, 0.01, .2, T), col = "slateblue", lwd = 2) # 1% perceptual noise
+legend("bottomright", legend = c("More than half", "Fewer than half"), fill = c("darkgray", "slateblue"), bty = "n")
+```
+
+**Vague quantifier** implies sampling the boundary from a distribution for each trial new.
+
+```{r sim-fun-vague, cache = T}
+## One response
+resp <- function(p) rbinom(length(p), 1, p)
+
+## Curve simulation
+sim.curve.vague <- function(boundary, perc.noise, bound.noise){
+  x <- seq(0, 1, .01)
+  xmat <- matrix(rep(x, 100000), nrow = length(x))
+  res <- apply(xmat, 1, resp.vague
+               , noise = perc.noise
+               , boundary = boundary
+               , bound.noise = bound.noise)
+  return(colMeans(res))
+}
+
+## Response rules
+
+## Deliberate rule-based respongind is perfect responding
+resp.vague <- function(x, boundary, noise = 0, bound.noise = 0.2){
+  x.perc <- rnorm(length(x), x, noise)
+  bound.perc <- rnorm(length(x), boundary, bound.noise)
+  p <- ifelse(x.perc > bound.perc, 1, 0)
+  resp(p)
+}
+
+plot(sim.curve.vague(0.5, 0.01, 0), type = "l", lwd = 2, col = "darkgray", ylab = "Prop true responses", xlab = "Percent")
+lines(sim.curve.vague(0.5, 0.01, .1), col = "slateblue", lwd = 2) # 1% perceptual noise
+legend("bottomright", legend = c("More than half", "Fewer than half"), fill = c("darkgray", "slateblue"), bty = "n")
+```
+
+**Notes Julia:** Putting it all together, here is a figure with a sort of default response curve for optimal responding, one curve with only response error, one with only vagueness, and one combined.
+
+**Notes Julia:** The figure below also highlights two aspects of our model that might be relevant. First, for any item the probability of making a response error is the same. This uniformity implies a uniform offset from perfect responding that is also symmetric for true/false responses (we do not model a bias towards one of the responses). Second, the effect of vagueness is also assumed to be symmetric around the threshold. These assumptions are both theoretically plausible and help make the model identifiable. 
+
+```{r par-explanation-figure, cache = T}
+## One response
+get.resp <- function(p) rbinom(length(p), 1, p)
+
+## Curve simulation
+sim.curve <- function(boundary, perc.noise, resp.error, bound.noise){
+  x <- seq(0, 1, .01)
+  xmat <- matrix(rep(x, 100000), nrow = length(x))
+  res <- apply(xmat, 1, resp
+               , noise = perc.noise
+               , boundary = boundary
+               , resp.error = resp.error
+               , bound.noise = bound.noise
+               )
+  return(colMeans(res))
+}
+
+## Response rule: respond TRUE if perceived quantity is greater than perceived threshold. After this is decided the response errors kick in. 
+resp <- function(x, boundary, noise = 0, resp.error = 0.05, bound.noise = 0.2){
+  x.perc <- rnorm(length(x), x, noise)
+  bound.perc <- rnorm(length(x), boundary, bound.noise)
+  p <- ifelse(x.perc > bound.perc, 1, 0)
+  p.noise <- msm::rtnorm(length(p)
+                         , p
+                         , ifelse(resp.error == 0, .00001, resp.error)
+                         , lower = 0, upper = 1)
+  get.resp(p.noise)
+}
+# x <- .2; boundary <- .5; noise <- 0; resp.error <- 0; bound.noise <- 0.2 
+
+default.curve <- sim.curve(boundary = 0.5
+                           , perc.noise = 0.01
+                           , resp.error = 0
+                           , bound.noise = 0)
+resp.err.curve <- sim.curve(boundary = 0.5
+                           , perc.noise = 0.01
+                           , resp.error = 0.15
+                           , bound.noise = 0)
+vague.curve <- sim.curve(boundary = 0.5
+                           , perc.noise = 0.01
+                           , resp.error = 0
+                           , bound.noise = 0.1)
+vague.resp.err.curve <- sim.curve(boundary = 0.5
+                           , perc.noise = 0.01
+                           , resp.error = 0.15
+                           , bound.noise = 0.1)
+thr.vague.resp.err.curve <- sim.curve(boundary = 0.55
+                           , perc.noise = 0.01
+                           , resp.error = 0.15
+                           , bound.noise = 0.1)
+
+#png("simulation_with_threshold.png", res = 100)
+par(mgp = c(2, .7, 0))
+plot(default.curve, type = "l", lwd = 2, col = "darkgray", ylab = "Proportion of 'true' responses", xlab = "Percent")
+lines(vague.curve, col = "slateblue", lwd = 2) # increased vagueness, no response error
+lines(resp.err.curve, col = "firebrick", lwd = 2) # increased response error, no vagueness
+lines(vague.resp.err.curve, col = "darkgreen", lwd = 2) # both
+lines(thr.vague.resp.err.curve, col = "cyan", lwd = 2) # add different threshold
+abline(h=0.5, col = "black", lwd = 1, lty = "dashed")
+
+legend("bottomright", legend = c("Ideal responding", "Vague", "Resp. error", "Vague + resp. error", "Vague + resp. error + thr."), fill = c("darkgray", "slateblue", "firebrick", "darkgreen", "cyan"), bty = "n")
+#dev.off()
+```
+
+
+
+## Study 2 {.tabset .tabset-fade}
+
+**Notes Julia:** Yeah, I would leave study 2 out for now, the results are clearly uninterpretable; needs better cleaning at some point.
+
