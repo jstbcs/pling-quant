@@ -626,7 +626,7 @@ pThresh <- apply(mdiff, 2, mean)
 indord <- order(pThresh)
 plotCI(1:I, pThresh[indord]
        , li = pCIs[1, indord], ui = pCIs[2, indord]
-       , pch = 21, pt.bg = "slateblue"
+       , pch = 21, pt.bg = qcols[res.clust.thr_vag_pars$cluster]
        , ylab = "Most - Many"
        , xlab = "Participant")
 abline(h = 0)
