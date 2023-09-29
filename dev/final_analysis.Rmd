@@ -97,7 +97,7 @@ nrow(dat)
 
 ## Trial-level
 dat <- subset(dat, read_and_decide_time > 300)
-dat <- subset(dat, read_and_decide_time < 2500)
+dat <- subset(dat, read_and_decide_time < 4000)
 nrow(dat)
 
 table(dat$quant, dat$workerid)[, 1]
@@ -157,9 +157,9 @@ dat.or$bins <- cut(dat.or$percent, breaks = seq(0, 100, 10), labels = paste0(seq
 
 tmp <- tapply(dat.or$resp, list(dat.or$workerid, dat.or$bins, dat.or$quant), mean)
 
-for(i in 1:5){
-  ind.obs.fig(tmp[,,i], qcols[i])
-}
+# for(i in 1:5){
+#   ind.obs.fig(tmp[,,i], qcols[i])
+# }
 ```
 
 
@@ -233,10 +233,10 @@ parameters {
   real delta[D];                      // Means of betas
   real<lower=0> sigma2[D];             // variance of betas
   vector[D] beta[I];                  // vectors of betas
-  real nu[D];                      // Means of alphas
+  real<lower=0> nu[D];                      // Means of alphas
   real<lower=0> sigma2alpha[D];       // variance of alphas
   vector<lower=0>[D] alpha[I];                  // vectors of alphas
-  vector<lower=0,upper=1>[D] gamma[I];     //vector of gammas
+  vector<lower=0,upper=0.5>[D] gamma[I];     //vector of gammas
 }
 
 transformed parameters {
@@ -249,23 +249,27 @@ transformed parameters {
 model {
   vector[N] mu;
   vector[N] p;
-  delta ~ normal(0, 5);
+  delta ~ normal(0, 2);
   sigma2 ~ inv_gamma(2, .2);
-  nu ~ normal(0, 5);
+  nu ~ normal(0, 2);
   sigma2alpha ~ inv_gamma(2, .2);
-  for (i in 1:I)
+  
+  for (i in 1:I){
     beta[i] ~ normal(delta, sigma);
-  for (i in 1:I)
     alpha[i] ~ lognormal(nu, sigmaalpha);
-  for (i in 1:I)
     gamma[i] ~ beta(2, 20);
-  for (n in 1:N)
+  }
+  
+  for (n in 1:N){
     mu[n] = few[n] * (cperc[n] - beta[sub[n], 1]) / alpha[sub[n], 1] + fewer[n] * (cperc[n] - beta[sub[n], 2]) / alpha[sub[n], 2] + many[n] * (cperc[n] - beta[sub[n], 3]) / alpha[sub[n], 3] + more[n] * (cperc[n] - beta[sub[n], 4]) / alpha[sub[n], 4] + most[n] * (cperc[n] - beta[sub[n], 5]) / alpha[sub[n], 5];
-  for (n in 1:N)
+
     p[n] = few[n] * gamma[sub[n], 1] + fewer[n] * gamma[sub[n], 2] + many[n] * gamma[sub[n], 3] + more[n] * gamma[sub[n], 4] + most[n] * gamma[sub[n], 5] + (1 - 2 * (few[n] * gamma[sub[n], 1] + fewer[n] * gamma[sub[n], 2] + many[n] * gamma[sub[n], 3] + more[n] * gamma[sub[n], 4] + most[n] * gamma[sub[n], 5])) * inv_logit(mu[n]);
-  y ~ bernoulli(p);
+    
+    y[n] ~ bernoulli(p[n]);
+  }
 }
 ```
+
 
 ```{r init, cache = T}
 getDat <- function(dat){
@@ -321,12 +325,12 @@ predat <- getDat(dat)
 ```{r run-logmod, cache = T, eval = F, results = "hide"}
 rerun <- T
 logmodfit <- myRunner(predat
-                      , iter = 2500
-                      , warmup = 750
+                      , iter = 1200
+                      , warmup = 800
                       , mod = logmod
-                      , control = list(adapt_delta = .97, max_treedepth = 14)
-                      , nchains = 6)
-save(logmodfit, file = "outstudy1e.rda")
+                      # , control = list(adapt_delta = .97, max_treedepth = 14)
+                      , nchains = 8)
+save(logmodfit, file = "outstudy1_29092023.rda")
 ```
 
 ```{r, cache = T}
@@ -440,7 +444,7 @@ matplot(res5, type = "l", lty = 1, col = qcols[5], main =  "Most")
 - Individual estimates of response curves. There is quite a bit of variability for *Many*, even more than for *Most*. Roughly speaking, the ordering is *Many*, *More than half*, *Most*. *Few* has the most shallow response curve.
 
 ```{r, fig.asp=1.3, fig.height=10}
-titles <- paste0(LETTERS[1:5], ". ", c("Few", "Fewer than half", "Many", "More than half", "Most"))
+titles <- paste0("(", letters[1:5], ") ", c("Few", "Fewer than half", "Many", "More than half", "Most"))
 
 png("Quants_curves.png", width = 1900, height = 2500, res=300)
 layout(matrix(1:10, ncol = 2, byrow = T))
@@ -1698,22 +1702,27 @@ vague.resp.err.curve <- sim.curve(boundary = 0.5
                            , perc.noise = 0.01
                            , resp.error = 0.15
                            , bound.noise = 0.1)
-thr.vague.resp.err.curve <- sim.curve(boundary = 0.55
+thr.vague.resp.err.curve <- sim.curve(boundary = 0.58
                            , perc.noise = 0.01
                            , resp.error = 0.15
                            , bound.noise = 0.1)
+thr.curve <- sim.curve(boundary = 0.58
+                           , perc.noise = 0.01
+                           , resp.error = 0
+                           , bound.noise = 0)
 
-#png("simulation_with_threshold.png", res = 100)
-par(mgp = c(2, .7, 0))
+png("simulation_with_threshold.png", res = 150, width = 1000, height = 700)
+par(mgp = c(2, .7, 0), mar = c(3,3,1,1))
 plot(default.curve, type = "l", lwd = 2, col = "darkgray", ylab = "Proportion of 'true' responses", xlab = "Percent")
-lines(vague.curve, col = "slateblue", lwd = 2) # increased vagueness, no response error
-lines(resp.err.curve, col = "firebrick", lwd = 2) # increased response error, no vagueness
-lines(vague.resp.err.curve, col = "darkgreen", lwd = 2) # both
-lines(thr.vague.resp.err.curve, col = "cyan", lwd = 2) # add different threshold
+lines(vague.curve, col = "firebrick", lwd = 2) # increased vagueness, no response error
+lines(resp.err.curve, col = "darkgreen", lwd = 2) # increased response error, no vagueness
+lines(vague.resp.err.curve, col = "cyan", lwd = 2) # both
+lines(thr.vague.resp.err.curve, col = "orange", lwd = 2) # add different threshold
+lines(thr.curve, col = "slateblue", lwd = 2) # add different threshold
 abline(h=0.5, col = "black", lwd = 1, lty = "dashed")
 
-legend("bottomright", legend = c("Ideal responding", "Vague", "Resp. error", "Vague + resp. error", "Vague + resp. error + thr."), fill = c("darkgray", "slateblue", "firebrick", "darkgreen", "cyan"), bty = "n")
-#dev.off()
+legend("bottomright", legend = c("Ideal responding", "Thr.", "Vague", "Resp. error", "Vague + resp. error", "Thr. + vague + resp. error"), fill = c("darkgray", "slateblue", "firebrick", "darkgreen", "cyan", "orange"), bty = "n")
+dev.off()
 ```
 
 
