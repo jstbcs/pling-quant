@@ -1,0 +1,263 @@
+---
+title: "HC_Most_quantifiers_have_many_meanings"
+output: html_document
+date: '2023-09-05'
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = TRUE)
+
+library("factoextra")
+library("cluster")
+library("magrittr")
+library("ggplot2")
+library("ggdendro")
+library(dendextend)
+library(stringr)
+library(RColorBrewer)
+library(klaR)
+load("/Users/sonia/ownCloud/Documents/HHU/Journal drafts/paper with Julia/palphas.rda")
+load("/Users/sonia/ownCloud/Documents/HHU/Journal drafts/paper with Julia/pbeta.rda")
+load("/Users/sonia/ownCloud/Documents/HHU/Journal drafts/paper with Julia/pgamma.rda")
+parsbeta <- cbind(pbeta1, pbeta2, pbeta3, pbeta4, pbeta5)
+parsalpha <- cbind(palpha1, palpha2, palpha3, palpha4, palpha5)
+parsgamma <- cbind(pgamma1, pgamma2, pgamma3, pgamma4, pgamma5)
+qcols <- brewer.pal(5, "Dark2")
+```
+
+#Response error clustres
+```{r resp errors}
+#For kmeans we choose two cluster solution
+res.km <- kmeans(x = parsgamma, centers = 2, nstart = 20)
+km.memb <- res.km$cluster
+
+
+#Check is we can replicate this with HC
+res.hc <- parsgamma %>% 
+  dist(method = "euclidean") %>% 
+  hclust(method = "ward.D2") 
+
+
+hc.memb <- cutree(res.hc, k = 2)
+
+hcd <- as.dendrogram(res.hc)
+leb <- labels(hcd)
+lebels <- stringr::str_extract(string = leb, pattern = "(?<=\\[).*(?=\\,)")
+
+png("HC_response_error_2clusters.png",width = 2500, height = 1300, res = 300)
+par(mar=c(0.5, 2.25, 0, 0), las = 2)
+hcd %>% set("branches_k_color", k = 2, qcols[c(2,1)]) %>%
+  set("labels", lebels) %>%  
+  set("labels_cex", c(.8))%>%
+  plot()
+dev.off()
+
+
+table(km.memb, hc.memb)
+#two participants were classified differently
+
+clgamma <- as.data.frame(cbind(parsgamma, km.memb, hc.memb))
+aggregate(parsgamma ~ hc.memb, data = clgamma, mean)
+aggregate(parsgamma ~ hc.memb, data = clgamma, sd)
+#It looks like only FTH and few have different error rates between clusters
+
+clgamma$km.memb
+clgamma$hc.memb
+
+#Evaluate clusters
+formulaAll=hc.memb~pgamma1 + pgamma2 + pgamma3 + pgamma4 + pgamma5
+gw_obj <- greedy.wilks(formulaAll,data=clgamma, niveau = 0.1) 
+gw_obj$results$p.value.overall
+gw_res <- gw_obj$results
+gw_res
+
+#LDA
+lds_befcv <- lda(hc.memb~pgamma1+pgamma2, clgamma, CV = FALSE)
+p3 <- predict(lds_befcv, clgamma)$class
+tab3 <- table(Predicted = p3, Actual = clgamma$hc.memb)
+tab3
+sum(diag(tab3))/sum(tab3)
+
+#LOOCV
+lds_cv <- lda(hc.memb~pgamma1+pgamma2, clgamma, CV = TRUE)
+tab4 <- table(clgamma$hc.memb, lds_cv$class, dnn = c('Actual Group','Predicted Group'))
+tab4
+sum(diag(tab4))/sum(tab4)
+
+```
+
+#Vagueness
+
+```{r vagueness}
+#for vagueness we also choose two clusters
+res.clust <- kmeans(x = parsalpha, centers = 2, nstart = 20)
+km.memb <- res.clust$cluster
+table(km.memb)
+
+
+#Here is HC analysis
+res.hc <- parsalpha %>% 
+  dist(method = "euclidean") %>% 
+  hclust(method = "ward.D2") 
+
+
+hc.memb <- cutree(res.hc, k = 2)
+
+hcd <- as.dendrogram(res.hc)
+leb <- labels(hcd)
+lebels <- stringr::str_extract(string = leb, pattern = "(?<=\\[).*(?=\\,)")
+
+png("HC_vegueness_2clusters.png",width = 2500, height = 1300, res = 300)
+par(mar=c(0.5, 2.25, 0, 0), las = 3)
+hcd %>% set("branches_k_color", k = 2, qcols[c(2:1)]) %>%
+  set("labels", lebels) %>%  
+  set("labels_cex", c(.8))%>%
+  plot()
+dev.off()
+
+clalpha <- as.data.frame(cbind(parsalpha, hc.memb))
+aggregate(cbind(palpha1, palpha2, palpha3, palpha4, palpha5) ~ hc.memb, data = clalpha, mean)
+aggregate(cbind(palpha1, palpha2, palpha3, palpha4, palpha5) ~ hc.memb, data = clalpha, sd)
+clalpha$hc.memb
+table(clalpha$hc.memb)
+
+#Evaluate clusters
+formulaAll=hc.memb~palpha1 + palpha2 + palpha3 + palpha4 + palpha5
+gw_obj <- greedy.wilks(formulaAll,data=clalpha, niveau = 0.1) 
+gw_obj$results$p.value.overall
+gw_res <- gw_obj$results
+gw_res
+
+#LDA
+lds_befcv <- lda(hc.memb~palpha3+palpha5, clalpha, CV = FALSE)
+p3 <- predict(lds_befcv, clalpha)$class
+tab3 <- table(Predicted = p3, Actual = clalpha$hc.memb)
+tab3
+sum(diag(tab3))/sum(tab3)
+
+#LOOCV
+lds_cv <- lda(hc.memb~palpha3+palpha5, clalpha, CV = TRUE)
+tab4 <- table(clalpha$hc.memb, lds_cv$class, dnn = c('Actual Group','Predicted Group'))
+tab4
+sum(diag(tab4))/sum(tab4)
+
+
+#3 clusters in kmeans
+res.clust <- kmeans(x = parsalpha, centers = 3, nstart = 20)
+km.memb <- res.clust$cluster
+table(km.memb)
+
+#3 clusters in HC
+res.hc <- parsalpha %>% 
+  dist(method = "euclidean") %>% 
+  hclust(method = "ward.D2") 
+hc.memb <- cutree(res.hc, k = 3)
+
+table(km.memb, hc.memb)
+
+clalpha <- as.data.frame(cbind(parsalpha, hc.memb))
+aggregate(cbind(palpha1, palpha2, palpha3, palpha4, palpha5) ~ hc.memb, data = clalpha, mean)
+aggregate(cbind(palpha1, palpha2, palpha3, palpha4, palpha5) ~ hc.memb, data = clalpha, sd)
+clalpha$hc.memb
+formulaAll=hc.memb~palpha1 + palpha2 + palpha3 + palpha4 + palpha5
+gw_obj <- greedy.wilks(formulaAll,data=clalpha, niveau = 0.1) 
+gw_obj$results$p.value.overall
+gw_res <- gw_obj$results
+gw_res
+
+```
+
+```{r threshold}
+#Kmeans for threshold
+res.clust <- kmeans(x = parsbeta, centers = 3, nstart = 20)
+km.memb <- res.clust$cluster
+table(km.memb)
+
+#HC for threshold
+res.hc <- parsbeta %>% 
+  dist(method = "euclidean") %>% 
+  hclust(method = "ward.D2") 
+
+hcd <- as.dendrogram(res.hc)
+leb <- labels(hcd)
+lebels <- stringr::str_extract(string = leb, pattern = "(?<=\\[).*(?=\\,)")
+
+hc.memb <- cutree(res.hc, k = 3)
+
+png("HC_threshold_3clusters.png",width = 2500, height = 1300, res = 300)
+par(mar=c(0.5, 2.25, 0, 0), las = 2)
+hcd %>% set("branches_k_color", k = 3, qcols[c(1:4)]) %>%
+  set("labels", lebels) %>%  
+  set("labels_cex", c(.8))%>%
+  plot()
+dev.off()
+
+table(hc.memb, km.memb)
+#Not the same
+
+#Look at 4 clusters solution, arguably there are 4 clusters
+res.hc <- parsbeta %>% 
+  dist(method = "euclidean") %>% 
+  hclust(method = "ward.D2")
+
+
+hc.memb <- cutree(res.hc, k = 4)
+table(hc.memb)
+
+hcd <- as.dendrogram(res.hc)
+
+leb <- labels(hcd)
+lebels <- stringr::str_extract(string = leb, pattern = "(?<=\\[).*(?=\\,)")
+
+png("HC_threshold_4clusters.png",width = 2500, height = 1300, res = 300)
+par(mar=c(0.5, 2.25, 0, 0), las = 2)
+hcd %>% set("branches_k_color", k = 4, qcols[c(4,2,1,3)]) %>%
+  set("labels", lebels) %>%  
+  set("labels_cex", c(.8))%>%
+  plot()
+dev.off()
+
+clbeta <- as.data.frame(cbind(parsbeta, hc.memb))
+aggregate(cbind(pbeta1,pbeta2, pbeta3,pbeta4, pbeta5) ~ hc.memb, data = clbeta, mean)
+#Not much difference in MTH and FTH as expected
+aggregate(cbind(pbeta1, pbeta3, pbeta5) ~ hc.memb, data = clbeta, mean)
+table(hc.memb)
+clbeta$hc.memb
+clbeta$recoded.hc.memb <- ifelse(clbeta$hc.memb == 3, 1, 
+                                 ifelse(clbeta$hc.memb == 4, 2,
+                                        ifelse(clbeta$hc.memb == 2, 3, 4)))
+
+table(clbeta$hc.memb, clbeta$recoded.hc.memb)
+table(clbeta$recoded.hc.memb)
+members <- clbeta$recoded.hc.memb
+members
+
+#Evaluate clusters
+formulaAll=hc.memb~pbeta1 + pbeta2 + pbeta3 + pbeta4 + pbeta5
+gw_obj <- greedy.wilks(formulaAll,data=clbeta, niveau = 0.1) 
+gw_obj$results$p.value.overall
+gw_res <- gw_obj$results
+gw_res
+
+#LDA
+lds_befcv <- lda(hc.memb~pbeta1 + pbeta3+pbeta5, clbeta, CV = FALSE)
+p3 <- predict(lds_befcv, clbeta)$class
+tab3 <- table(Predicted = p3, Actual = clbeta$hc.memb)
+tab3
+sum(diag(tab3))/sum(tab3)
+
+#LOOCV
+lds_cv <- lda(hc.memb~pbeta1 +pbeta3+pbeta5, clbeta, CV = TRUE)
+tab4 <- table(clbeta$hc.memb, lds_cv$class, dnn = c('Actual Group','Predicted Group'))
+tab4
+sum(diag(tab4))/sum(tab4)
+
+#recalculate the mean thresholds
+thr_per <- function(threshold){
+   threshold*100 + 50
+}
+clbeta_mean <- aggregate(cbind(pbeta1,pbeta2, pbeta3,pbeta4, pbeta5) ~ hc.memb, data = clbeta, mean)
+thr_per(clbeta_mean$pbeta1)
+
+```
+
